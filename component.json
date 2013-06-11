@@ -1,0 +1,13 @@
+{
+  "name": "gss",
+  "description": "GSS runtime",
+  "version": "0.0.1",
+  "scripts": [
+    "lib/gss.js"
+  ],
+  "dependencies": {
+    "the-gss/compiler": "*",
+    "the-gss/engine": "*"
+  },
+  "main": "lib/gss.js"
+}
