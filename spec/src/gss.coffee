@@ -1,7 +1,15 @@
 Gss = require 'gss'
+chai = require 'chai' unless chai
 
 describe 'GSS runtime', ->
-  container = document.querySelector '#fixtures #runtime'
+  container = document.createElement 'div'
+  container.style.marginLeft = '-1000px'
+  container.innerHTML = """
+      <button id="button1">One</button>
+      <button id="button2">Second</button>
+  """
+  document.querySelector('body').appendChild container
+
   gss = new Gss '../browser/the-gss-engine/worker/gss-solver.js', container
   describe 'when initialized', ->
     it 'should be bound to the DOM container', ->

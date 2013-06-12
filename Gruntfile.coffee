@@ -38,7 +38,7 @@ module.exports = ->
         options:
           bare: true
         expand: true
-        cwd: 'spec'
+        cwd: 'spec/src'
         src: ['**.coffee']
         dest: 'spec'
         ext: '.js'
