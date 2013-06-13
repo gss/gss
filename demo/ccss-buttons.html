@@ -13,10 +13,13 @@
     <pre id="rules">
 #one[width] == #two[width];
     </pre>
+    <h2>What happens here?</h2>
+    <p>
+    The GSS rule states that the two buttons, identified by their CSS selectors must have equal width. This rule is first compiled to a Cassowary constraint. The GSS engine measures the dimensions of the buttons and adds those as additional constraints. Cassowary then solves the constraints to provide the optimal width for both, which the GSS engine writes to CSS.</p>
     <script>
       var Gss = require('gss');
       var runtime = new Gss('../browser/gss-solver.min.js');
-      var rules = document.getElementById('rules').innerText.trim();
+      var rules = document.getElementById('rules').textContent.trim();
       runtime.run(rules);
     </script>
   </body>
