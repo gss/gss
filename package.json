@@ -27,9 +27,7 @@
   },
   "testling": {
     "browsers": [
-      "chrome/25.0",
-      "firefox/19.0",
-      "ipad/6.0"
+      "firefox/19.0"
     ],
     "harness" : "mocha",
     "scripts": "browser/*.js",
