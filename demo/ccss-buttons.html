@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>GSS demo</title>
+    <script src="../browser/gss.js"></script>
+  </head>
+  <body>
+    <h1>Demo: buttons of equal width</h1>
+    <button id="one">Hello, World!</button>
+    <button id="two">Foo</button>
+    <h2>GSS rule</h2>
+    <pre id="rules">
+#one[width] == #two[width];
+    </pre>
+    <script>
+      var Gss = require('gss');
+      var runtime = new Gss('../browser/gss-solver.min.js');
+      var rules = document.getElementById('rules').innerText.trim();
+      runtime.run(rules);
+    </script>
+  </body>
+</html>
