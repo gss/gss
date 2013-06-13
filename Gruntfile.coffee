@@ -38,7 +38,7 @@ module.exports = ->
         options:
           bare: true
         expand: true
-        cwd: 'spec/src'
+        cwd: 'spec'
         src: ['**.coffee']
         dest: 'spec'
         ext: '.js'
@@ -51,6 +51,24 @@ module.exports = ->
     jshint:
       src: ['lib/*.js']
 
+    # Cross-browser testing
+    connect:
+      server:
+        options:
+          base: ''
+          port: 9999
+
+    'saucelabs-mocha':
+      all:
+        options:
+          urls: ['http://127.0.0.1:9999/spec/runner.html']
+          browsers: [
+            browserName: 'chrome'
+            platform: 'linux'
+          ]
+          build: process.env.TRAVIS_JOB_ID
+          testname: 'GSS browser tests'
+
   # Grunt plugins used for building
   @loadNpmTasks 'grunt-component'
   @loadNpmTasks 'grunt-contrib-coffee'
@@ -62,6 +80,11 @@ module.exports = ->
   @loadNpmTasks 'grunt-mocha-phantomjs'
   @loadNpmTasks 'grunt-contrib-watch'
 
+  # Cross-browser testing in the cloud
+  @loadNpmTasks 'grunt-contrib-connect'
+  @loadNpmTasks 'grunt-saucelabs'
+
   @registerTask 'build', ['component', 'component_build', 'uglify']
   @registerTask 'test', ['jshint', 'coffee', 'build',  'mocha_phantomjs']
+  @registerTask 'crossbrowser', ['jshint', 'coffee', 'build', 'mocha_phantomjs', 'connect', 'saucelabs-mocha']
   @registerTask 'default', ['build']
