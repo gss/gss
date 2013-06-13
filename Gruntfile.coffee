@@ -65,9 +65,19 @@ module.exports = ->
           browsers: [
             browserName: 'chrome'
             platform: 'linux'
+          ,
+            browserName: 'firefox'
+            platform: 'linux'
+          ,
+            browserName: 'internet explorer'
+            platform: 'WIN8'
+            version: '10'
           ]
           build: process.env.TRAVIS_JOB_ID
           testname: 'GSS browser tests'
+          tunnelTimeout: 5
+          concurrency: 3
+          detailedError: true
 
   # Grunt plugins used for building
   @loadNpmTasks 'grunt-component'
