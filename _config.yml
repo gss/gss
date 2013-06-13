@@ -6,4 +6,4 @@ exclude:
   - "npm-debug.log"
   - "package.json"
   - "lib"
-  - "src"
+  - "spec"
