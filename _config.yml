@@ -1,0 +1,9 @@
+exclude:
+  - "node_modules"
+  - "components"
+  - "Gruntfile.coffee"
+  - "README.md"
+  - "npm-debug.log"
+  - "package.json"
+  - "lib"
+  - "src"
