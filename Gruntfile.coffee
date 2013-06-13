@@ -64,10 +64,8 @@ module.exports = ->
           urls: ['http://127.0.0.1:9999/spec/runner.html']
           browsers: [
             browserName: 'chrome'
-            platform: 'linux'
           ,
             browserName: 'firefox'
-            platform: 'linux'
           ,
             browserName: 'internet explorer'
             platform: 'WIN8'
