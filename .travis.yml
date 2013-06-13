@@ -18,3 +18,6 @@ env:
       fBFWte8rUltAjrJE7B20iK1rqEg8Qoiwc7vmgIvFv1Efc7+rJvpEkelH14LO
 
       StVQPaHnsWwlM4FB1Y69xDr/z6p94V2jY9q/Ko0RxsixBmyivjg='
+branches:
+  only:
+      - gh-pages
