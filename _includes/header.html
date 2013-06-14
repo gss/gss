@@ -1,6 +1,6 @@
   <div class="masthead">
     <ul class="nav nav-pills pull-right">
-      <li><a href="/">Home</a></li>
+      <li{% if page.url == '/index.html' %} class="active"{% endif %}><a href="/">Home</a></li>
       <li><a href="https://github.com/the-gss">GitHub</a></li>
     </ul>
     <h3 class="muted">{{ site.title }}</h3>
