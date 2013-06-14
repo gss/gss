@@ -67,6 +67,12 @@ module.exports = ->
           ,
             browserName: 'firefox'
           ,
+            browserName: 'safari'
+            platform: 'OS X 10.8'
+            version: '6'
+          ,
+            browserName: 'opera'
+          ,
             browserName: 'internet explorer'
             platform: 'WIN8'
             version: '10'
