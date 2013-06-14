@@ -1,0 +1,30 @@
+---
+layout: default
+style: |
+  body {
+    padding-top: 1em;
+  }
+  .sidebar-nav {
+    padding: 9px 0;
+  }
+---
+<div class="container-fluid">
+  <div class="row-fluid">
+    <div class="span3">
+      <div class="well sidebar-nav">
+        <ul class="nav nav-list">
+          <li class="nav-header">Documentation</li>
+          {% for post in site.categories['docs'] %}
+          <li{% if post.url == page.url %} class="active"{% endif%}>
+            <a href="{{ post.url }}">{{ post.title }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+    <div class="span9">
+      <h1>{{ page.title }}</h1>
+      {{ content }}
+    </div>
+  </div>
+</div>
