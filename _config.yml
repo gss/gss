@@ -1,3 +1,4 @@
+permalink: /:categories/:title/
 exclude:
   - "node_modules"
   - "components"

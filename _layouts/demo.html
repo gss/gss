@@ -1,0 +1,69 @@
+---
+scripts:
+  - /browser/gss.js
+layout: default
+---
+<div class="container">
+  <h1>{{ page.title }}</h1>
+  <p class="lead">{{ page.intro }}</p>
+  <div class="well" id="demo" style="min-height: 100px;">
+    {{ content }}
+  </div>
+  <form>
+    <legend>GSS rules</legend>
+    <div class="control-group" id="rules">
+      <textarea class="input-block-level" rows="6" id="gss">{{ page.gss }}</textarea>
+      <span class="help-inline"></span>
+    </div>
+    <button class="btn btn-primary" id="run">Run</button>
+  </form>
+  <h2>What is happening here?</h2>
+  <p>
+  The GSS rules above are first compiled to a Cassowary constraint. The GSS engine measures the dimensions of the elements referred to in the rules and adds those as additional constraints. Cassowary then solves the constraints to provide the optimal width for both, which the GSS engine writes to CSS.
+  </p>
+</div>
+<script>
+  var GSS = require('gss');
+  var container = document.getElementById('demo');
+  var button = document.getElementById('run');
+  var ruleInput = document.getElementById('gss');
+  var ruleArea = document.getElementById('rules');
+  var ruleHelp = ruleArea.querySelector('.help-inline');
+  var runtime;
+
+  // Initial run on load
+  runGSS(ruleInput.value.trim());
+
+  // Running new rules specified by the user
+  button.addEventListener('click', function (event) {
+    event.preventDefault();
+    // Clear previous state
+    ruleArea.classList.remove('error');
+    ruleHelp.textContent = '';
+
+    // Prepare and run rules
+    var rules = ruleInput.value.trim();
+    try {
+      runGSS(rules);
+    } catch (e) {
+      // Report GSS syntax error
+      reportError('line ' + e.line + ': ' + e.message);
+    }
+  });
+
+  function reportError(message) {
+    ruleArea.classList.add('error');
+    ruleHelp.textContent = message;
+  }
+
+  function runGSS(rules) {
+    if (runtime) {
+      runtime.stop();
+    }
+    runtime = new GSS('/browser/gss-solver.min.js', container);
+    runtime.engine.onError = function (e) {
+      reportError(e.message);
+    };
+    runtime.run(rules);
+  }
+</script>
