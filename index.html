@@ -1,17 +1,35 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>GSS - Constraint-driven CSS</title>
-  </head>
-  <body>
-    <h1>GSS</h1>
-    <p>See the <a href="https://github.com/the-gss">GitHub repositories</a></p>
-    <p><a href="./demo/ccss-buttons.html">Quick demo</a></p>
-    <h2>Download</h2>
-    <ul>
-      <li><a href="./browser/gss.js">GSS Engine and language parsers</a></li>
-      <li><a href="./browser/gss-solver.min.js">Constraint Solver Web Worker</a></li>
-    </ul>
-  </body>
-</html>
+---
+layout: default
+title: Grid Style Sheets
+---
+<div class="container">
+  <div class="hero-unit">
+    <h1>Grid Style Sheets</h1>
+    <p class="lead">Constraint-driven styling for the web</p>
+  </div>
+  <div class="row">
+    <div class="span6">
+      <p><strong>GSS</strong> compiles and runs Grid Style Sheet rules. GSS is an implementation of Badros &amp; Borning's <a href="http://www.cs.washington.edu/research/constraints/web/ccss-uwtr.pdf">Constraint Cascading Style Sheets</a>, enabling far better layout control through building relational rules between different elements.</p>
+
+      <p>GSS supports the following syntaxes for defining layout rules:</p>
+
+      <ul>
+        <li>
+        <a href="https://github.com/the-gss/ccss-compiler#readme">CCSS</a> - direct constraints related to position and size of DOM elements</li>
+        <li>
+        <a href="https://github.com/the-gss/vfl-compiler#readme">VFL</a> - horizontal and vertical spacing constraints based on <a href="http://developer.apple.com/library/ios/documentation/UserExperience/Conceptual/AutolayoutPG/Articles/formatLanguage.html">Apple's Visual Format Language</a>
+        </li>
+      </ul><p>Additionally, support for <a href="https://github.com/the-gss/gtl-compiler#readme">GTL</a>, based on the <a href="http://dev.w3.org/csswg/css-template/">W3C Grid Template Language</a> is planned.</p>
+
+      <p>The main GSS repository provides a <a href="http://component.io/">Component</a> library handling both the compilation and application of the layout constraints.</p>
+    </div>
+    <div class="span6">
+      <p>See the <a href="https://github.com/the-gss">GitHub repositories</a></p>
+      <p><a href="./demo/ccss-buttons.html">Quick demo</a></p>
+      <h2>Download</h2>
+      <ul>
+        <li><a href="./browser/gss.js">GSS Engine and language parsers</a></li>
+        <li><a href="./browser/gss-solver.min.js">Constraint Solver Web Worker</a></li>
+      </ul>
+    </div>
+</div>
