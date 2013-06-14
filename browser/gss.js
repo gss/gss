@@ -7252,6 +7252,10 @@ Gss.prototype.run = function (rules) {
   this.engine.run(ast);
 };
 
+Gss.prototype.stop = function () {
+  this.engine.stop();
+};
+
 module.exports = Gss;
 
 });
