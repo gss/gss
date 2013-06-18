@@ -3,7 +3,7 @@
 /_site/
 .DS_Store
 npm-debug.log
-sauce_connect.log
+sauce_connect.log*
 /browser/gss.min.js
 /browser/the-gss-engine
 /spec/*.js
