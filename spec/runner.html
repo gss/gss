@@ -8,6 +8,7 @@
   <body>
     <div id="mocha"></div>
     <script src="../browser/gss.js"></script>
+    <script src="./helpers/verify.js"></script>
     <script src="http://chaijs.com/chai.js"></script>
     <script src="http://cdn.thegrid.io/mocha/mocha.js"></script>
     <script>mocha.setup('bdd');</script>
@@ -16,7 +17,6 @@
       if (window.mochaPhantomJS) {
         mochaPhantomJS.run();
       } else {
-        mocha.checkLeaks();
         mocha.run();
       }
     </script>

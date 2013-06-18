@@ -42,6 +42,14 @@ module.exports = ->
         src: ['**.coffee']
         dest: 'spec'
         ext: '.js'
+      helpers:
+        options:
+          bare: true
+        expand: true
+        cwd: 'spec/helpers'
+        src: ['**.coffee']
+        dest: 'spec/helpers'
+        ext: '.js'
 
     # BDD tests on browser
     mocha_phantomjs:
