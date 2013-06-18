@@ -30,3 +30,17 @@ describe 'GSS runtime', ->
       '#button3[w]':
         measure: ['#button3', 'width']
         to: 150
+
+  verify
+    html: """
+      <button style="margin: 0px;" id="button4">One</button>
+      <button id="button5">Second</button>
+      """
+    rules: """
+      #button4[left] == #button5[right];
+      """
+    expected:
+      '#button4[left]':
+        measure: ['#button4', 'left']
+        to: (val, solved) ->
+          chai.expect(solved['#button5[right]']).to.equal val
