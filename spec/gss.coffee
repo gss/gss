@@ -13,7 +13,7 @@ describe 'GSS runtime', ->
       '#button1[width]':
         measure: ['#button1', 'width']
         to: (val, solved) ->
-          chai.expect(solved['#button2[width]']).to.equal val
+          chai.expect(Math.floor(solved['#button2[width]'])).to.equal val
 
   verify
     html: """
@@ -43,4 +43,4 @@ describe 'GSS runtime', ->
       '#button4[left]':
         measure: ['#button4', 'left']
         to: (val, solved) ->
-          chai.expect(solved['#button5[right]']).to.equal val
+          chai.expect(Math.floor(solved['#button5[right]'])).to.equal val

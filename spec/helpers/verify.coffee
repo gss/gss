@@ -1,12 +1,12 @@
 verify = ({html, rules, expected}) ->
   describe "with rule #{rules}", ->
-    container = document.querySelector '#fixture'
-    unless container
+    container = null
+    before (done) ->
       container = document.createElement 'div'
-      container.id = '#fixture'
       container.style.marginLeft = '-1000px'
-    container.innerHTML = html
-    document.querySelector('body').appendChild container
+      document.querySelector('body').appendChild container
+      container.innerHTML = html
+      done()
     gss = new Gss '../browser/the-gss-engine/worker/gss-solver.js', container
     solvedValues = null
     it 'should produce correct values', (done) ->
@@ -15,9 +15,9 @@ verify = ({html, rules, expected}) ->
         chai.expect(solved).to.be.an 'object'
         for key, expectation of expected
           if typeof expectation.to is 'function'
-            expectation.to solved[key], solved
+            expectation.to Math.floor(solved[key]), solved
             continue
-          chai.expect(solved[key]).to.equal expectation.to, "#{key} should be #{expectation.to}"
+          chai.expect(Math.floor(solved[key])).to.equal Math.floor(expectation.to), "#{key} should be #{expectation.to}"
         gss.stop()
         done()
       gss.run rules
@@ -28,9 +28,9 @@ verify = ({html, rules, expected}) ->
         chai.expect(element).to.be.an 'object', "Element #{selector} should be found"
         rect = element.getBoundingClientRect()
         if typeof expectation.to is 'function'
-          expectation.to rect[measurement], solvedValues
+          expectation.to Math.floor(rect[measurement]), solvedValues
           continue
-        chai.expect(rect[measurement]).to.equal expectation.to, "#{key} should be #{expectation.to}"
+        chai.expect(Math.floor(rect[measurement])).to.equal Math.floor(expectation.to), "#{key} should be #{expectation.to}"
 
 if typeof module is 'object'
   module.exports = verify
