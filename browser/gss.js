@@ -7643,24 +7643,6 @@ Getter = (function() {
     return this.container.querySelectorAll(identifier);
   };
 
-  Getter.prototype.getPosition = function(element) {
-    var offsets, x, y;
-    x = 0;
-    y = 0;
-    while (true) {
-      x += element.offsetLeft;
-      y += element.offsetTop;
-      if (!element.offsetParent) {
-        break;
-      }
-      element = element.offsetParent;
-    }
-    return offsets = {
-      left: x,
-      top: y
-    };
-  };
-
   Getter.prototype.measure = function(element, dimension) {
     switch (dimension) {
       case 'width':
@@ -7671,10 +7653,10 @@ Getter = (function() {
         return element.getBoundingClientRect().height;
       case 'left':
       case 'x':
-        return this.getPosition(element).left;
+        return element.getBoundingClientRect().left;
       case 'top':
       case 'y':
-        return this.getPosition(element).top;
+        return element.getBoundingClientRect().top;
       case 'bottom':
         return this.measure(element, 'top') + this.measure(element, 'height');
       case 'right':
@@ -7722,7 +7704,8 @@ Setter = (function() {
   };
 
   Setter.prototype.makePositioned = function(element) {
-    return element.style.position = 'absolute';
+    element.style.position = 'absolute';
+    return element.style.margin = '0px';
   };
 
   Setter.prototype.getOffsets = function(element) {
