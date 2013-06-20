@@ -7627,6 +7627,11 @@ Getter = (function() {
     method = selector[0];
     identifier = selector[1];
     switch (method) {
+      case "$reserved":
+        if (identifier === 'this') {
+          return container;
+        }
+        break;
       case "$id":
         if (identifier[0] === '#') {
           identifier = identifier.substr(1);
@@ -7644,6 +7649,7 @@ Getter = (function() {
   };
 
   Getter.prototype.measure = function(element, dimension) {
+    var scroll;
     switch (dimension) {
       case 'width':
       case 'w':
@@ -7653,10 +7659,12 @@ Getter = (function() {
         return element.getBoundingClientRect().height;
       case 'left':
       case 'x':
-        return element.getBoundingClientRect().left;
+        scroll = window.scrollX || window.scrollLeft || 0;
+        return element.getBoundingClientRect().left + scroll;
       case 'top':
       case 'y':
-        return element.getBoundingClientRect().top;
+        scroll = window.scrollY || window.scrollTop || 0;
+        return element.getBoundingClientRect().top + scroll;
       case 'bottom':
         return this.measure(element, 'top') + this.measure(element, 'height');
       case 'right':
