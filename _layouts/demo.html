@@ -57,6 +57,12 @@ layout: default
     // Clear previous state
     ruleArea.classList.remove('error');
     ruleHelp.textContent = '';
+    for (var i = 0; i < container.childNodes.length; i++) {
+      if (!container.childNodes[i].removeAttribute) {
+        continue;
+      }
+      container.childNodes[i].removeAttribute('style');
+    }
 
     // Prepare and run rules
     var rules = ruleInput.value.trim();
