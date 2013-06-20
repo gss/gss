@@ -33,7 +33,7 @@ describe 'GSS runtime', ->
 
   verify
     html: """
-      <button style="margin: 0px;" id="button4">One</button>
+      <button id="button4">One</button>
       <button id="button5">Second</button>
       """
     rules: """
@@ -44,3 +44,22 @@ describe 'GSS runtime', ->
         measure: ['#button4', 'left']
         to: (val, solved) ->
           chai.expect(Math.floor(solved['#button5[right]'])).to.equal val
+
+  verify
+    html: """
+      <button id="b1">One</button>
+      <button id="b2">Second</button>
+      <button id="b3">3</button>
+      """
+    rules: """
+      @horizontal [#b1]-[#b2]-[#b3];
+      #b1[top] == #b2[top] == #b3[top];
+      """
+    expected:
+      "#b2[left]":
+        measure: ['#b2', 'left']
+        to: (val, solved) ->
+          hgap = solved['[hgap]']
+          left = solved['#b1[right]']
+          right = Math.round val
+          chai.expect(right).to.equal Math.floor left + hgap

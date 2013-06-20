@@ -1,5 +1,5 @@
 verify = ({html, rules, expected}) ->
-  describe "with rule #{rules}", ->
+  describe "with rule #{rules.trim()}", ->
     container = null
     before (done) ->
       container = document.createElement 'div'
