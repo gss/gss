@@ -106,7 +106,7 @@ module.exports = ->
   @loadNpmTasks 'grunt-contrib-connect'
   @loadNpmTasks 'grunt-saucelabs'
 
-  @registerTask 'build', ['component', 'component_build', 'uglify']
-  @registerTask 'test', ['jshint', 'coffee', 'build',  'mocha_phantomjs']
+  @registerTask 'build', ['component', 'component_build', 'coffee', 'uglify']
+  @registerTask 'test', ['jshint', 'build',  'mocha_phantomjs']
   @registerTask 'crossbrowser', ['jshint', 'coffee', 'build', 'mocha_phantomjs', 'connect', 'saucelabs-mocha']
   @registerTask 'default', ['build']
