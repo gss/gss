@@ -12,8 +12,9 @@ solvedValue = (id, dimension, solved) ->
 measure = (id, dimension) ->
   return Math.floor el(id).getBoundingClientRect()[dimension]
 
-run = ({html, rules, onSolved}) ->
-  describe "#{rules.trim()}", ->
+run = ({html, rules, after}) ->
+  name = rules?.trim?()
+  describe "#{(if name then name else "//")}", ->
     container = null
     before (done) ->
       container = document.createElement 'div'
@@ -21,16 +22,24 @@ run = ({html, rules, onSolved}) ->
       document.querySelector('body').appendChild container
       container.innerHTML = html
       done()
-    gss = new Gss '../browser/the-gss-engine/worker/gss-solver.js', container
+    gss = null
     solvedValues = null
-    it 'should produce correct values', (done) ->
-      gss.engine.onSolved = (solved) ->
-        if typeof onSolved is 'function'
-          onSolved solved
-        gss.stop()
+    
+    it 'should produce correct values', (done) ->      
+      container.addEventListener 'solved', (e) ->
+        values = e.detail.values
+        engine = e.detail.engine
+        if typeof after is 'function'
+          after values
+        else
+          throw new Error "after needed to test something"        
+        engine.stop()
         done()
       if rules
+        gss = new Gss {worker:'../browser/the-gss-engine/worker/gss-solver.js', container:container}
         gss.run rules
+      else
+        Gss.spawn()
 
 describe 'GSS runtime', ->
   run
@@ -42,7 +51,7 @@ describe 'GSS runtime', ->
       #button1[width] == #button2[width];
       #button2[width] == 100;
       """
-    onSolved: (solved) ->
+    after: (solved) ->
       chai.expect(solvedValue('button1','width',solved)).to.equal 100
       chai.expect(measure('button1','width')).to.equal 100
 
@@ -54,7 +63,7 @@ describe 'GSS runtime', ->
       #button3[height] == 100;
       #button3[width] == 150;
       """
-    onSolved: (solved) ->
+    after: (solved) ->
       chai.expect(solvedValue('button3','height',solved)).to.equal 100
       chai.expect(measure('button3','height')).to.equal 100
       chai.expect(solvedValue('button3','width',solved)).to.equal 150
@@ -67,7 +76,7 @@ describe 'GSS runtime', ->
     rules: """
       #button4[height] == #button4[intrinsic-width];
       """
-    onSolved: (solved) ->
+    after: (solved) ->
       chai.expect(solvedValue('button4','height',solved)).to.equal 72
       chai.expect(measure('button4','height')).to.equal 72
       chai.expect(measure('button4','width')).to.equal 72
@@ -86,7 +95,7 @@ describe 'GSS runtime', ->
         @horizontal [#b1(==11)][#b2(==9)]-100-[#b3(==10)];
         #b1[x] == 10;
         """
-      onSolved: (solved) ->
+      after: (solved) ->
         # solver
         chai.expect(solvedValue('b1','x',solved)).to.equal 10
         chai.expect(solvedValue('b1','width',solved)).to.equal 11
@@ -98,7 +107,31 @@ describe 'GSS runtime', ->
         chai.expect(measure('b3','left')).to.equal 130
         chai.expect(measure('b3','width')).to.equal 10
   
-
+  # 
+  #
+  #
+  describe "<style>", ->
+    run
+      html: """
+        <style type="text/gss">
+          @horizontal [#s1(==11)][#s2(==9)]-100-[#s3(==10)];
+          #s1[x] == 10;
+        </style>
+        <div id="s1"></div>
+        <div id="s2"></div>
+        <div id="s3"></div>
+        """
+      after: (solved) ->
+        # solver
+        chai.expect(solvedValue('s1','x',solved)).to.equal 10
+        chai.expect(solvedValue('s1','width',solved)).to.equal 11
+        # dom
+        chai.expect(measure('s1','left')).to.equal 10
+        chai.expect(measure('s1','width')).to.equal 11
+        chai.expect(measure('s2','left')).to.equal 21
+        chai.expect(measure('s2','width')).to.equal 9
+        chai.expect(measure('s3','left')).to.equal 130
+        chai.expect(measure('s3','width')).to.equal 10
 
   ###
   verify

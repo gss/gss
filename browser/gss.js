@@ -7503,10 +7503,32 @@ exports.compile = function (gss) {
 };
 
 });
+require.register("d4tocchini-customevent-polyfill/CustomEvent.js", function(exports, require, module){
+var CustomEvent;
+
+CustomEvent = function(event, params) {
+  var evt;
+  params = params || {
+    bubbles: false,
+    cancelable: false,
+    detail: undefined
+  };
+  evt = document.createEvent("CustomEvent");
+  evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+  return evt;
+};
+
+CustomEvent.prototype = window.Event.prototype;
+
+window.CustomEvent = CustomEvent;
+
+});
 require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
 var Command, Engine, Get, Set,
   __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
   __slice = [].slice;
+
+require("customevent-polyfill");
 
 Get = require("./dom/Getter.js");
 
@@ -7520,6 +7542,7 @@ Engine = (function() {
     this.container = container;
     this._execute = __bind(this._execute, this);
     this.execute = __bind(this.execute, this);
+    this.dispatch_solved = __bind(this.dispatch_solved, this);
     this.process = __bind(this.process, this);
     this.measure = __bind(this.measure, this);
     if (!this.container) {
@@ -7532,7 +7555,6 @@ Engine = (function() {
     this.worker = null;
     this.getter = new Get(this.container);
     this.setter = new Set(this.container);
-    this.onSolved = null;
     this.commandsForWorker = [];
     this.queryCache = {};
     this.elsByGssId = {};
@@ -7572,9 +7594,20 @@ Engine = (function() {
         }
       }
     }
-    if (this.onSolved) {
-      return this.onSolved(values);
-    }
+    return this.dispatch_solved(values);
+  };
+
+  Engine.prototype.dispatch_solved = function(values) {
+    var e;
+    e = new CustomEvent("solved", {
+      detail: {
+        values: values,
+        engine: this
+      },
+      bubbles: true,
+      cancelable: true
+    });
+    return this.container.dispatchEvent(e);
   };
 
   Engine.prototype.handleError = function(error) {
@@ -8110,10 +8143,46 @@ compiler = require("gss-compiler");
 
 Engine = require("gss-engine");
 
-Gss = function(workerPath, container) {
+Gss = function(_arg) {
+  var container, worker;
+  worker = _arg.worker, container = _arg.container;
+  if (!worker) {
+    worker = Gss.worker;
+  }
   this.container = (container ? container : document);
-  this.engine = new Engine(workerPath, container);
+  this.engine = new Engine(worker, container);
   return this;
+};
+
+Gss.worker = '../browser/the-gss-engine/worker/gss-solver.js';
+
+Gss.processStyleTag = function(style, o) {
+  var container, gss, rules;
+  rules = style.innerHTML;
+  container = style.parentElement;
+  if (container.tagName === "HEAD") {
+    container = document;
+  }
+  o.container = container;
+  gss = new Gss(o);
+  return gss.run(rules);
+};
+
+Gss.spawn = function(o, from) {
+  var style, styles, _i, _len, _results;
+  if (o == null) {
+    o = {};
+  }
+  if (from == null) {
+    from = document;
+  }
+  styles = from.querySelectorAll("style[type='text/gss']");
+  _results = [];
+  for (_i = 0, _len = styles.length; _i < _len; _i++) {
+    style = styles[_i];
+    _results.push(Gss.processStyleTag(style, o));
+  }
+  return _results;
 };
 
 Gss.prototype.run = function(rules) {
@@ -8166,6 +8235,10 @@ require.alias("the-gss-engine/lib/dom/Getter.js", "gss/deps/gss-engine/lib/dom/G
 require.alias("the-gss-engine/lib/dom/Setter.js", "gss/deps/gss-engine/lib/dom/Setter.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/index.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss-engine/index.js");
+require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "the-gss-engine/deps/customevent-polyfill/CustomEvent.js");
+require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "the-gss-engine/deps/customevent-polyfill/index.js");
+require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "d4tocchini-customevent-polyfill/index.js");
+
 require.alias("the-gss-engine/lib/Engine.js", "the-gss-engine/index.js");
 
 require.alias("gss/lib/gss.js", "gss/index.js");
