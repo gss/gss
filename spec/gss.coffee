@@ -1,20 +1,51 @@
 Gss = require 'gss'
 
+el = (id) ->
+  if typeof id is "string" then return document.getElementById(id) else return id
+
+gssId = (id) ->
+  return el(id).getAttribute("data-gss-id")
+
+solvedValue = (id, dimension, solved) ->
+  Math.floor(solved["$#{gssId(id)}[#{dimension}]"])
+
+measure = (id, dimension) ->
+  return Math.floor el(id).getBoundingClientRect()[dimension]
+
+run = ({html, rules, onSolved}) ->
+  describe "#{rules.trim()}", ->
+    container = null
+    before (done) ->
+      container = document.createElement 'div'
+      container.style.marginLeft = '-1000px'
+      document.querySelector('body').appendChild container
+      container.innerHTML = html
+      done()
+    gss = new Gss '../browser/the-gss-engine/worker/gss-solver.js', container
+    solvedValues = null
+    it 'should produce correct values', (done) ->
+      gss.engine.onSolved = (solved) ->
+        if typeof onSolved is 'function'
+          onSolved solved
+        gss.stop()
+        done()
+      gss.run rules
+
 describe 'GSS runtime', ->
-  verify
+  run
     html: """
       <button id="button1">One</button>
       <button id="button2">Second</button>
       """
     rules: """
-      #button1[width] == #button2[width];      
+      #button1[width] == #button2[width];
       #button2[width] == 100;
       """
-    expected: 
-      'button1': ['width',100]
+    onSolved: (solved) ->
+      chai.expect(solvedValue('button1','width',solved)).to.equal 100
+      chai.expect(measure('button1','width')).to.equal 100
 
-
-  verify
+  run
     html: """
       <button id="button3">Hello, world</button>
       """
@@ -22,9 +53,12 @@ describe 'GSS runtime', ->
       #button3[height] == 100;
       #button3[width] == 150;
       """
-    expected:
-      'button3': ['height',100]
-      'button3': ['width', 150]
+    onSolved: (solved) ->
+      chai.expect(solvedValue('button3','height',solved)).to.equal 100
+      chai.expect(measure('button3','height')).to.equal 100
+      chai.expect(solvedValue('button3','width',solved)).to.equal 150
+      chai.expect(measure('button3','width')).to.equal 150
+
   ###
   verify
     html: """
