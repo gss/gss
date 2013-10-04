@@ -29,7 +29,8 @@ run = ({html, rules, onSolved}) ->
           onSolved solved
         gss.stop()
         done()
-      gss.run rules
+      if rules
+        gss.run rules
 
 describe 'GSS runtime', ->
   run
@@ -58,6 +59,46 @@ describe 'GSS runtime', ->
       chai.expect(measure('button3','height')).to.equal 100
       chai.expect(solvedValue('button3','width',solved)).to.equal 150
       chai.expect(measure('button3','width')).to.equal 150
+  
+  run
+    html: """
+      <button style="width:72px;" id="button4">Hello, world</button>
+      """
+    rules: """
+      #button4[height] == #button4[intrinsic-width];
+      """
+    onSolved: (solved) ->
+      chai.expect(solvedValue('button4','height',solved)).to.equal 72
+      chai.expect(measure('button4','height')).to.equal 72
+      chai.expect(measure('button4','width')).to.equal 72
+  
+  # 
+  #
+  #
+  describe "VFL", ->
+    run
+      html: """
+        <div id="b1"></div>
+        <div id="b2"></div>
+        <div id="b3"></div>
+        """
+      rules: """
+        @horizontal [#b1(==11)][#b2(==9)]-100-[#b3(==10)];
+        #b1[x] == 10;
+        """
+      onSolved: (solved) ->
+        # solver
+        chai.expect(solvedValue('b1','x',solved)).to.equal 10
+        chai.expect(solvedValue('b1','width',solved)).to.equal 11
+        # dom
+        chai.expect(measure('b1','left')).to.equal 10
+        chai.expect(measure('b1','width')).to.equal 11
+        chai.expect(measure('b2','left')).to.equal 21
+        chai.expect(measure('b2','width')).to.equal 9
+        chai.expect(measure('b3','left')).to.equal 130
+        chai.expect(measure('b3','width')).to.equal 10
+  
+
 
   ###
   verify
