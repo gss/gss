@@ -1890,25 +1890,20 @@ module.exports = (function(){
           pos = pos1;
         }
         if (result0 !== null) {
-          result0 = (function(offset, head, tail, s) {
-              var result = head;
+          result0 = (function(offset, e1, tail, s) {
+              var eq, e2;
               if (s.length === 0) {s = [];}
               for (var i = 0; i < tail.length; i++) {
-                result = [
-                  //"c",
-                  tail[i][1],
-                  result,
-                  tail[i][3]
-                ];
+                eq = tail[i][1];
+                e2 = tail[i][3];
                 parser.addC([
-                  //"c",
-                  tail[i][1],
-                  head,
-                  tail[i][3]
+                  eq,
+                  e1,
+                  e2
                 ].concat(s));
-                head = tail[i][3];
+                e1 = e2;
               }
-              return result;
+              return "LineaerExpression";
             })(pos0, result0[0], result0[1], result0[3]);
         }
         if (result0 === null) {
@@ -1994,7 +1989,7 @@ module.exports = (function(){
             pos = pos1;
           }
           if (result0 !== null) {
-            result0 = (function(offset) {return parser.error("Invalid Strength",line,column)})(pos0);
+            result0 = (function(offset) {return parser.error("Invalid Strength or Weight",line,column)})(pos0);
           }
           if (result0 === null) {
             pos = pos0;
@@ -2004,101 +1999,41 @@ module.exports = (function(){
       }
       
       function parse_Weight() {
-        var result0, result1, result2;
-        var pos0, pos1;
+        var result0, result1;
+        var pos0;
         
         pos0 = pos;
-        pos1 = pos;
-        if (input.charCodeAt(pos) === 58) {
-          result0 = ":";
+        if (/^[0-9]/.test(input.charAt(pos))) {
+          result1 = input.charAt(pos);
           pos++;
         } else {
-          result0 = null;
+          result1 = null;
           if (reportFailures === 0) {
-            matchFailed("\":\"");
+            matchFailed("[0-9]");
           }
         }
-        if (result0 !== null) {
-          if (/^[0-9]/.test(input.charAt(pos))) {
-            result2 = input.charAt(pos);
-            pos++;
-          } else {
-            result2 = null;
-            if (reportFailures === 0) {
-              matchFailed("[0-9]");
-            }
-          }
-          if (result2 !== null) {
-            result1 = [];
-            while (result2 !== null) {
-              result1.push(result2);
-              if (/^[0-9]/.test(input.charAt(pos))) {
-                result2 = input.charAt(pos);
-                pos++;
-              } else {
-                result2 = null;
-                if (reportFailures === 0) {
-                  matchFailed("[0-9]");
-                }
-              }
-            }
-          } else {
-            result1 = null;
-          }
-          if (result1 !== null) {
-            result0 = [result0, result1];
-          } else {
-            result0 = null;
-            pos = pos1;
-          }
-        } else {
-          result0 = null;
-          pos = pos1;
-        }
-        if (result0 !== null) {
-          result0 = (function(offset, w) {return Number(w.join(""))})(pos0, result0[1]);
-        }
-        if (result0 === null) {
-          pos = pos0;
-        }
-        if (result0 === null) {
-          pos0 = pos;
-          pos1 = pos;
-          if (input.charCodeAt(pos) === 58) {
-            result0 = ":";
-            pos++;
-          } else {
-            result0 = null;
-            if (reportFailures === 0) {
-              matchFailed("\":\"");
-            }
-          }
-          if (result0 !== null) {
-            if (input.length > pos) {
+        if (result1 !== null) {
+          result0 = [];
+          while (result1 !== null) {
+            result0.push(result1);
+            if (/^[0-9]/.test(input.charAt(pos))) {
               result1 = input.charAt(pos);
               pos++;
             } else {
               result1 = null;
               if (reportFailures === 0) {
-                matchFailed("any character");
+                matchFailed("[0-9]");
               }
             }
-            if (result1 !== null) {
-              result0 = [result0, result1];
-            } else {
-              result0 = null;
-              pos = pos1;
-            }
-          } else {
-            result0 = null;
-            pos = pos1;
           }
-          if (result0 !== null) {
-            result0 = (function(offset) {return parser.error("Invalid Weight",line,column)})(pos0);
-          }
-          if (result0 === null) {
-            pos = pos0;
-          }
+        } else {
+          result0 = null;
+        }
+        if (result0 !== null) {
+          result0 = (function(offset, w) {return Number(w.join(""))})(pos0, result0);
+        }
+        if (result0 === null) {
+          pos = pos0;
         }
         return result0;
       }
@@ -2877,7 +2812,7 @@ module.exports = (function(){
           pos = pos1;
         }
         if (result0 !== null) {
-          result0 = (function(offset, v) {return ["measure",v]})(pos0, result0[2]);
+          result0 = (function(offset, v) { return p.processMeasure(["measure",v]);})(pos0, result0[2]);
         }
         if (result0 === null) {
           pos = pos0;
@@ -2949,16 +2884,47 @@ module.exports = (function(){
         }
         if (result0 !== null) {
           result0 = (function(offset, $, v) {       
-              var result, id;
-              v = v.join("")
-              id = "["+v+"]"
+              var result, id, _id1, _id2;
+              v = v.join("");
+              id = "["+v+"]";
               if ($.length !== 0) {
-                parser.add$($.selector);
+                parser.add$($.selector);        
                 id = $.selector + id;
-                parser.addVar(['get',id,v,$.ast],id);
+                switch (v) {
+                  case 'right':
+                    _id1 = $.selector + "[" + "x" + "]";
+                    _id2 = $.selector + "[" + "width" + "]";
+                    parser.addVar(['var', _id1, "x", $.ast], _id1);
+                    parser.addVar(['var', _id2, "width", $.ast], _id2);
+                    parser.addVar(['varexp',id,['plus',['get',_id1],['get',_id2]], $.ast], id);
+                    break;
+                  case 'bottom':
+                    _id1 = $.selector + "[" + "y" + "]";
+                    _id2 = $.selector + "[" + "height" + "]";
+                    parser.addVar(['var', _id1, "y", $.ast], _id1);
+                    parser.addVar(['var', _id2, "height", $.ast], _id2);
+                    parser.addVar(['varexp',id,['plus',['get',_id1],['get',_id2]], $.ast], id);
+                    break;
+                  case 'center-x':          
+                  case 'centerX':
+                    _id1 = $.selector + "[" + "x" + "]";
+                    _id2 = $.selector + "[" + "width" + "]";
+                    parser.addVar(['var', _id1, "x", $.ast], _id1);
+                    parser.addVar(['var', _id2, "width", $.ast], _id2);
+                    parser.addVar(['varexp',id,['plus',['get',_id1],['divide',['get',_id2],2]], $.ast], id);                       break;
+                  case 'center-y':
+                  case 'centerY':
+                    _id1 = $.selector + "[" + "y" + "]";
+                    _id2 = $.selector + "[" + "height" + "]";
+                    parser.addVar(['var', _id1, "y", $.ast], _id1);
+                    parser.addVar(['var', _id2, "height", $.ast], _id2);
+                    parser.addVar(['varexp',id,['plus',['get',_id1],['divide',['get',_id2],2]], $.ast], id);                       break;
+                  default:
+                    parser.addVar(['var',id,v,$.ast],id);
+                }                        
               }
               else {
-                parser.addVar(['get',id,v],id);
+                parser.addVar(['var',id,v],id);
                 // ['_dimensionize',['get','width'],['get','height']]
               }
               return ['get',id];      
@@ -4013,43 +3979,62 @@ module.exports = (function(){
       }
       
       
-        var p, parser, flatten, cs, $s, vars, _varsCache; 
+        var p, parser, flatten, _varsCache, _measuresCache; 
       
         p = parser = this;
       
-        cs = parser.cs = [];
-        parser.addC    = function (c) {
-          cs.push(c);
+        p.commands = [];  
+      
+        p.cs = [];
+        p.addC = function (c) {
+          p.commands.push(c);
         };
         
-        $s = parser.$s = [];
-        parser.add$    = function ($) {
-          if ($s.indexOf($) === -1) {$s.push($);}
+        p.$s = [];
+        p.add$ = function ($) {
+          if (p.$s.indexOf($) === -1) {p.$s.push($);}
           return $;
         }
       
         _varsCache = [];
-        vars = parser.vars = [];
-        parser.addVar      = function (ast,id) {
-          if (_varsCache.indexOf(id) === -1) {_varsCache.push(id);vars.push(ast);}
+        p.vars = [];
+        p.addVar = function (ast,id) {
+          if (_varsCache.indexOf(id) === -1) {
+            _varsCache.push(id);
+            p.commands.push(ast);
+          }
+          return ast;
+        }
+        
+        _measuresCache = [];
+        p.measures = [];
+        p.processMeasure = function (ast) {
+          var _id;
+          _id = ast.toString(); // assuming stringified ast arrays CAN be used for cache lookup
+          if (_measuresCache.indexOf(_id) === -1) {
+            _measuresCache.push(_id);
+            p.measures.push(ast);
+          }
           return ast;
         }
       
-        parser.getResults = function () {
+        p.getResults = function () {
           return {
-            "selectors": this.$s,
-            "vars": this.vars,
-            "constraints": this.cs      
+            "selectors": p.$s,
+            "commands": p.commands
+            //"measures": p.measures,
+            //"vars": p.vars,
+            //"constraints": p.cs      
           }
         }
         
-        parser.toString = function (x) {
+        p.toString = function (x) {
           if (typeof x === "string") {return x}
           if (x instanceof Array) {return x.join("")}
           return ""
         }
       
-        parser.error = function (m,l,c) {
+        p.error = function (m,l,c) {
           if (!!l && !!c) {m = m+ " {line:" + l + ", col:" + c + "}"} 
           console.error(m);
           return m;
@@ -7451,8 +7436,7 @@ var vfl = require('./vfl-compiler');
 exports.parse = function (rules) {
   var results = {
     selectors: [],
-    vars: [],
-    constraints: []
+    commands: []
   };
   var parsed = vfl.parse(rules);
   parsed.forEach(function (rule) {
@@ -7461,8 +7445,8 @@ exports.parse = function (rules) {
     }
     var ccssRule = ccss.parse(rule.join(";\n"));
     results.selectors = results.selectors.concat(ccssRule.selectors);
-    results.vars = results.vars.concat(ccssRule.vars);
-    results.constraints = results.constraints.concat(ccssRule.constraints);
+    results.commands = results.commands.concat(ccssRule.commands);
+    //results.constraints = results.constraints.concat(ccssRule.constraints);
   });
   return results;
 };
@@ -7487,9 +7471,6 @@ var runCompiler = function (chunk) {
 exports.compile = function (gss) {
   var chunks = preparser.parse(gss);
   var results = {
-    selectors: [],
-    vars: [],
-    constraints: [],
     css: ''
   };
   chunks.forEach(function (chunk) {
@@ -7498,31 +7479,40 @@ exports.compile = function (gss) {
       return;
     }
     var rules = runCompiler(chunk);
-    results.selectors = results.selectors.concat(rules.selectors);
-    results.vars = results.vars.concat(rules.vars);
-    results.constraints = results.constraints.concat(rules.constraints);
+    for (var part in rules) {
+      if (!results[part]) {
+        results[part] = [];
+      }
+      results[part] = results[part].concat(rules[part]);
+    }
   });
   return results;
 };
 
 });
 require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
-var Engine, Get, Set,
-  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+var Command, Engine, Get, Set,
+  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+  __slice = [].slice;
 
 Get = require("./dom/Getter.js");
 
 Set = require("./dom/Setter.js");
 
+Command = require("./Command.js");
+
 Engine = (function() {
   function Engine(workerPath, container) {
     this.workerPath = workerPath;
     this.container = container;
+    this._execute = __bind(this._execute, this);
+    this.execute = __bind(this.execute, this);
     this.process = __bind(this.process, this);
     this.measure = __bind(this.measure, this);
     if (!this.container) {
       this.container = document;
     }
+    this.commands = new Command(this);
     this.elements = {};
     this.variables = {};
     this.dimensions = {};
@@ -7530,49 +7520,44 @@ Engine = (function() {
     this.getter = new Get(this.container);
     this.setter = new Set(this.container);
     this.onSolved = null;
+    this.commandsForWorker = [];
+    this.queryCache = {};
+    this.elsByGssId = {};
   }
 
   Engine.prototype.run = function(ast) {
-    var identifier, index, value, variable, _i, _len, _ref, _ref1;
-    ast.vars.forEach(this.measure);
-    _ref = ast.vars;
-    for (index = _i = 0, _len = _ref.length; _i < _len; index = ++_i) {
-      variable = _ref[index];
-      ast.vars[index] = ['var', variable[1]];
-    }
-    _ref1 = this.variables;
-    for (identifier in _ref1) {
-      value = _ref1[identifier];
-      ast.constraints.unshift(['gte', ['get', identifier], ['number', value]]);
-    }
-    return this.solve(ast);
+    var astForWorker;
+    this.execute(ast.commands);
+    astForWorker = {
+      commands: this.commandsForWorker
+    };
+    return this.solve(astForWorker);
   };
 
-  Engine.prototype.measure = function(variable) {
-    var dimension, identifier, selector;
-    identifier = variable[1];
-    dimension = variable[2];
-    selector = variable[3];
-    if (!selector) {
-      return;
-    }
-    this.dimensions[identifier] = dimension;
-    if (!this.elements[identifier]) {
-      this.elements[identifier] = this.getter.get(selector);
-    }
-    if (!this.elements[identifier]) {
-      return;
-    }
-    return this.variables[identifier] = this.getter.measure(this.elements[identifier], dimension);
+  Engine.prototype.measure = function(el, prop) {
+    return this.getter.measure(el, prop);
+  };
+
+  Engine.prototype.measureByGssId = function(id, prop) {
+    var el;
+    el = this.elsByGssId[id];
+    return this.measure(el, prop);
   };
 
   Engine.prototype.process = function(message) {
-    var dimension, element, identifier, values;
+    var dimension, element, gid, key, values;
     values = message.data.values;
-    for (identifier in values) {
-      dimension = this.dimensions[identifier];
-      element = this.elements[identifier];
-      this.setter.set(element, dimension, values[identifier]);
+    for (key in values) {
+      if (key[0] === "$") {
+        gid = key.substring(1, key.indexOf("["));
+        dimension = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
+        element = this.elsByGssId[gid];
+        if (element) {
+          this.setter.set(element, dimension, values[key]);
+        } else {
+          console.log("Element wasn't found");
+        }
+      }
     }
     if (this.onSolved) {
       return this.onSolved(values);
@@ -7604,11 +7589,350 @@ Engine = (function() {
     return this.worker.terminate();
   };
 
+  Engine.prototype._current_gid = 1;
+
+  Engine.prototype.gssId = function(el) {
+    var gid;
+    gid = el.getAttribute('data-gss-id');
+    if (gid == null) {
+      gid = this._current_gid++;
+      el.setAttribute('data-gss-id', gid);
+    }
+    this.elsByGssId[gid] = el;
+    return gid;
+  };
+
+  Engine.prototype.execute = function(commands) {
+    var command, _i, _len, _results;
+    _results = [];
+    for (_i = 0, _len = commands.length; _i < _len; _i++) {
+      command = commands[_i];
+      _results.push(this._execute(command, command));
+    }
+    return _results;
+  };
+
+  Engine.prototype._execute = function(command, root) {
+    var func, i, node, sub, _i, _len, _ref;
+    node = command;
+    func = this.commands[node[0]];
+    if (func == null) {
+      throw new Error("Engine Commands broke, couldn't find method: " + node[0]);
+    }
+    _ref = node.slice(1, +node.length + 1 || 9e9);
+    for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
+      sub = _ref[i];
+      if (sub instanceof Array) {
+        node.splice(i + 1, 1, this._execute(sub, root));
+      }
+    }
+    return func.call.apply(func, [this, root].concat(__slice.call(node.slice(1, node.length))));
+  };
+
+  Engine.prototype._addVarCommandsForElements = function(elements) {
+    return this.commandsForWorker.push("var", el.id + prop);
+  };
+
+  Engine.prototype.registerCommand = function(command) {
+    return this.commandsForWorker.push(command);
+  };
+
+  Engine.prototype.registerDomQuery = function(selector, isMulti, isLive, createNodeList) {
+    var el, id, nodeList, query, _i, _len;
+    if (this.queryCache[selector] != null) {
+      return this.queryCache[selector];
+    } else {
+      query = {};
+      query.selector = selector;
+      query.isQuery = true;
+      query.isMulti = isMulti;
+      query.isLive = isLive;
+      nodeList = createNodeList();
+      query.nodeList = nodeList;
+      query.ids = [];
+      for (_i = 0, _len = nodeList.length; _i < _len; _i++) {
+        el = nodeList[_i];
+        id = this.gssId(el);
+        if (query.ids.indexOf(id) === -1) {
+          query.ids.push(id);
+        }
+      }
+      query.observer = new PathObserver(nodeList, 'length', function(newval, oldval) {
+        return alert('handle nodelist change');
+      });
+      this.queryCache[selector] = query;
+      return query;
+    }
+  };
+
+  Engine.prototype.onElementsAdded = function(nodelist, callback) {
+    var newEls;
+    newEls = ['TBD...'];
+    return callback.apply(this, newEls);
+  };
+
+  Engine.prototype.getVarsFromVarId = function(id) {};
+
   return Engine;
 
 })();
 
 module.exports = Engine;
+
+});
+require.register("the-gss-engine/lib/Command.js", function(exports, require, module){
+/*
+
+Root commands, if bound to a dom query, will spawn commands
+to match live results of query.
+*/
+
+var Command, bindCache, bindRoot, checkCache, checkIntrinsics, getSuggestValueCommand, makeTemplateFromVarId, spawnCommands,
+  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+
+bindCache = {};
+
+checkCache = function(root, cacheKey) {
+  var bind, binds, _i, _len, _results;
+  binds = bindCache[cacheKey];
+  if (binds != null) {
+    _results = [];
+    for (_i = 0, _len = binds.length; _i < _len; _i++) {
+      bind = binds[_i];
+      _results.push(bindRoot(root, bind));
+    }
+    return _results;
+  }
+};
+
+bindRoot = function(root, query) {
+  root._is_bound = true;
+  if (root._binds == null) {
+    root._binds = [];
+  }
+  if (root._binds.indexOf(query) === -1) {
+    root._binds.push(query);
+    if (query.isMulti) {
+      if (root._binds.multi) {
+        throw new Error("Multi el queries only allowed once per statement");
+      }
+      return root._binds.multi = query;
+    }
+  }
+};
+
+spawnCommands = function(root, engine, cacheKey) {
+  var command, id, joiner, multiSplit, q, queries, ready, replaces, splitter, srcString, _i, _j, _len, _len1, _ref, _results;
+  if (!root._is_bound) {
+    return engine.registerCommand(root);
+  } else {
+    if (cacheKey) {
+      bindCache[cacheKey] = root._binds;
+    }
+    queries = root._binds;
+    srcString = JSON.stringify(root);
+    replaces = {};
+    ready = true;
+    for (_i = 0, _len = queries.length; _i < _len; _i++) {
+      q = queries[_i];
+      if (q.ids.length < 0) {
+        ready = false;
+        break;
+      }
+      if (q !== queries.multi) {
+        replaces[q.selector] = q.ids[0];
+      }
+    }
+    if (ready) {
+      if (queries.multi) {
+        multiSplit = queries.multi.selector;
+        _ref = queries.multi.ids;
+        _results = [];
+        for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+          id = _ref[_j];
+          command = srcString.split("%%" + multiSplit + "%%");
+          command = command.join("$" + id);
+          for (splitter in replaces) {
+            joiner = replaces[splitter];
+            command = command.split("%%" + splitter + "%%");
+            command = command.join("$" + joiner);
+          }
+          _results.push(engine.registerCommand(eval(command)));
+        }
+        return _results;
+      } else {
+        command = srcString;
+        for (splitter in replaces) {
+          joiner = replaces[splitter];
+          command = command.split("%%" + splitter + "%%");
+          command = command.join("$" + joiner);
+        }
+        return engine.registerCommand(eval(command));
+      }
+    }
+  }
+};
+
+getSuggestValueCommand = function(gssId, prop, val) {
+  return ['suggest', ['get', "$" + gssId + "[" + prop + "]"], ['number', val]];
+};
+
+checkIntrinsics = function(root, engine, varId, prop, query) {
+  var id, val, _i, _len, _ref, _results;
+  if (query != null) {
+    if (prop.indexOf("intrinsic-") === 0) {
+      _ref = query.ids;
+      _results = [];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        id = _ref[_i];
+        val = engine.measureByGssId(id, prop.split("intrinsic-")[1]);
+        _results.push(engine.registerCommand(getSuggestValueCommand(id, prop, val)));
+      }
+      return _results;
+    }
+  }
+};
+
+makeTemplateFromVarId = function(varId) {
+  var templ, y;
+  templ = varId;
+  y = varId.split("[");
+  if (y[0].length > 1) {
+    y[y.length - 2] += "%%";
+    templ = "%%" + y.join("[");
+  }
+  return templ;
+};
+
+Command = (function() {
+  function Command(engine) {
+    this['$id'] = __bind(this['$id'], this);
+    this['$reserved'] = __bind(this['$reserved'], this);
+    this['$tag'] = __bind(this['$tag'], this);
+    this['$class'] = __bind(this['$class'], this);
+    this['strength'] = __bind(this['strength'], this);
+    this['stay'] = __bind(this['stay'], this);
+    this['gt'] = __bind(this['gt'], this);
+    this['lt'] = __bind(this['lt'], this);
+    this['gte'] = __bind(this['gte'], this);
+    this['lte'] = __bind(this['lte'], this);
+    this['eq'] = __bind(this['eq'], this);
+    this['get'] = __bind(this['get'], this);
+    this['varexp'] = __bind(this['varexp'], this);
+    this['var'] = __bind(this['var'], this);
+    this.engine = engine;
+  }
+
+  Command.prototype['var'] = function(self, varId, prop, query) {
+    self.splice(2, 10);
+    self[1] = makeTemplateFromVarId(varId);
+    if (self._is_bound) {
+      self.push("%%" + query.selector + "%%");
+    }
+    spawnCommands(self, this.engine, varId);
+    return checkIntrinsics(self, this.engine, varId, prop, query);
+  };
+
+  Command.prototype['varexp'] = function(self, varId, expression, zzz) {
+    self.splice(3, 10);
+    self[1] = makeTemplateFromVarId(varId);
+    return spawnCommands(self, this.engine, varId);
+  };
+
+  Command.prototype['get'] = function(root, varId) {
+    checkCache(root, varId);
+    return ['get', makeTemplateFromVarId(varId)];
+  };
+
+  Command.prototype['number'] = function(root, num) {
+    return ['number', num];
+  };
+
+  Command.prototype['plus'] = function(root, e1, e2) {
+    return ['plus', e1, e2];
+  };
+
+  Command.prototype['minus'] = function(root, e1, e2) {
+    return ['minus', e1, e2];
+  };
+
+  Command.prototype['multiply'] = function(root, e1, e2) {
+    return ['multiply', e1, e2];
+  };
+
+  Command.prototype['divide'] = function(root, e1, e2, s, w) {
+    return ['divide', e1, e2];
+  };
+
+  Command.prototype['eq'] = function(self, e1, e2, s, w) {
+    return spawnCommands(self, this.engine);
+  };
+
+  Command.prototype['lte'] = function(self, e1, e2, s, w) {
+    return spawnCommands(self, this.engine);
+  };
+
+  Command.prototype['gte'] = function(self, e1, e2, s, w) {
+    return spawnCommands(self, this.engine);
+  };
+
+  Command.prototype['lt'] = function(self, e1, e2, s, w) {
+    return spawnCommands(self, this.engine);
+  };
+
+  Command.prototype['gt'] = function(self, e1, e2, s, w) {
+    return spawnCommands(self, this.engine);
+  };
+
+  Command.prototype['stay'] = function(self) {
+    return spawnCommands(self, this.engine);
+  };
+
+  Command.prototype['strength'] = function(root, s) {
+    return ['strength', s];
+  };
+
+  Command.prototype['$class'] = function(root, sel) {
+    var query,
+      _this = this;
+    query = this.engine.registerDomQuery("." + sel, true, true, function() {
+      return _this.engine.container.getElementsByClassName(sel);
+    });
+    bindRoot(root, query);
+    return query;
+  };
+
+  Command.prototype['$tag'] = function(root, sel) {
+    var query,
+      _this = this;
+    query = this.engine.registerDomQuery(sel, true, true, function() {
+      return _this.engine.container.getElementsByTagName(sel);
+    });
+    bindRoot(root, query);
+    return query;
+  };
+
+  Command.prototype['$reserved'] = function(root, sel) {
+    return query;
+  };
+
+  Command.prototype['$id'] = function(root, sel) {
+    var query,
+      _this = this;
+    query = this.engine.registerDomQuery("#" + sel, false, false, function() {
+      var el;
+      el = document.getElementById(sel);
+      return [el];
+    });
+    bindRoot(root, query);
+    return query;
+  };
+
+  return Command;
+
+})();
+
+module.exports = Command;
 
 });
 require.register("the-gss-engine/lib/dom/Getter.js", function(exports, require, module){
@@ -7779,11 +8103,13 @@ Gss.prototype.run = function (rules) {
   var ast;
   if (typeof rules === 'string') {
     ast = compiler.compile(rules);
-  } else if (typeof rules === 'object') {
+    // ruels are changed by reference!
+  } else if (typeof rules === 'object') {    
     ast = rules;
   } else {
     throw new Error('Unrecognized GSS rule format. Should be string or AST');
   }
+  //console.log(ast);  
   this.engine.run(ast);
 };
 
@@ -7817,6 +8143,7 @@ require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-vfl-compiler/inde
 require.alias("the-gss-compiler/lib/gss-compiler.js", "the-gss-compiler/index.js");
 
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/lib/Engine.js");
+require.alias("the-gss-engine/lib/Command.js", "gss/deps/gss-engine/lib/Command.js");
 require.alias("the-gss-engine/lib/dom/Getter.js", "gss/deps/gss-engine/lib/dom/Getter.js");
 require.alias("the-gss-engine/lib/dom/Setter.js", "gss/deps/gss-engine/lib/dom/Setter.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/index.js");
