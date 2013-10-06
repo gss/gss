@@ -1,4 +1,4 @@
-Gss = require 'gss'
+require 'gss'
 
 el = (id) ->
   if typeof id is "string" then return document.getElementById(id) else return id
@@ -18,11 +18,10 @@ run = ({html, rules, after}) ->
     container = null
     before (done) ->
       container = document.createElement 'div'
-      container.style.marginLeft = '-1000px'
-      document.querySelector('body').appendChild container
+      container.style.marginLeft = '-1000px'      
       container.innerHTML = html
       done()
-    gss = null
+    engine = null
     solvedValues = null
     
     it 'should produce correct values', (done) ->      
@@ -35,11 +34,11 @@ run = ({html, rules, after}) ->
           throw new Error "after needed to test something"        
         engine.stop()
         done()
+      document.querySelector('body').appendChild container
       if rules
-        gss = new Gss {worker:'../browser/the-gss-engine/worker/gss-solver.js', container:container}
-        gss.run rules
-      else
-        Gss.spawn()
+        engine = GSS({container:container, rules:rules})
+      #else
+      #  GSS.spawn()     
 
 describe 'GSS runtime', ->
   run
@@ -110,6 +109,29 @@ describe 'GSS runtime', ->
   # 
   #
   #
+  describe "<style>", ->
+    run
+      html: """
+        <style type="text/gss">
+          @horizontal [#s1(==11)][#s2(==9)]-100-[#s3(==10)];
+          #s1[x] == 10;
+        </style>
+        <div id="s1"></div>
+        <div id="s2"></div>
+        <div id="s3"></div>
+        """
+      after: (solved) ->
+        # solver
+        chai.expect(solvedValue('s1','x',solved)).to.equal 10
+        chai.expect(solvedValue('s1','width',solved)).to.equal 11
+        # dom
+        chai.expect(measure('s1','left')).to.equal 10
+        chai.expect(measure('s1','width')).to.equal 11
+        chai.expect(measure('s2','left')).to.equal 21
+        chai.expect(measure('s2','width')).to.equal 9
+        chai.expect(measure('s3','left')).to.equal 130
+        chai.expect(measure('s3','width')).to.equal 10
+  
   describe "<style>", ->
     run
       html: """

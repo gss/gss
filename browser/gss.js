@@ -7523,12 +7523,157 @@ CustomEvent.prototype = window.Event.prototype;
 window.CustomEvent = CustomEvent;
 
 });
+require.register("the-gss-engine/lib/GSS-id.js", function(exports, require, module){
+var GSS;
+
+if (window.GSS) {
+  GSS = window.GSS;
+} else {
+  GSS = {};
+}
+
+GSS._id_counter = 1;
+
+GSS._byIdCache = {};
+
+GSS._ids_killed = function(ids) {
+  var id, _i, _len, _results;
+  _results = [];
+  for (_i = 0, _len = ids.length; _i < _len; _i++) {
+    id = ids[_i];
+    _results.push(delete GSS._byIdCache[id]);
+  }
+  return _results;
+};
+
+GSS.getById = function(id) {
+  var el;
+  if (GSS._byIdCache[id]) {
+    return GSS._byIdCache[id];
+  }
+  el = document.querySelector("[data-gss-id=" + id + "]");
+  return el;
+};
+
+GSS.setupId = function(el) {
+  var gid;
+  gid = el.getAttribute('data-gss-id');
+  if (gid == null) {
+    gid = GSS._id_counter++;
+    el.setAttribute('data-gss-id', gid);
+  }
+  GSS._byIdCache[gid] = el;
+  return gid;
+};
+
+GSS.getId = function(el) {
+  var gid;
+  return gid = el.getAttribute('data-gss-id');
+};
+
+if (!window.GSS) {
+  window.GSS = GSS;
+}
+
+});
+require.register("the-gss-engine/lib/Query.js", function(exports, require, module){
+var Query, arrayAddsRemoves;
+
+arrayAddsRemoves = function(old, neu, removesFromContainer) {
+  var adds, n, o, removes, _i, _j, _len, _len1;
+  adds = [];
+  removes = [];
+  for (_i = 0, _len = neu.length; _i < _len; _i++) {
+    n = neu[_i];
+    if (old.indexOf(n) === -1) {
+      adds.push(n);
+    }
+  }
+  for (_j = 0, _len1 = old.length; _j < _len1; _j++) {
+    o = old[_j];
+    if (neu.indexOf(o) === -1) {
+      if ((removesFromContainer != null ? typeof removesFromContainer.indexOf === "function" ? removesFromContainer.indexOf(o) : void 0 : void 0) !== -1) {
+        removes.push(o);
+      }
+    }
+  }
+  return {
+    adds: adds,
+    removes: removes
+  };
+};
+
+Query = (function() {
+  Query.prototype.isQuery = true;
+
+  function Query(o) {
+    if (o == null) {
+      o = {};
+    }
+    this.selector = o.selector || (function() {
+      throw new Error("GssQuery must have a selector");
+    })();
+    this.createNodeList = o.createNodeList || (function() {
+      throw new Error("GssQuery must implement createNodeList()");
+    })();
+    this.isMulti = o.isMulti || false;
+    this.isLive = o.isLive || false;
+    this.ids = [];
+    this.lastAddedIds = [];
+    this.lastRemovedIds = [];
+    this.lastLocalRemovedIds = [];
+    this.update();
+    this;
+  }
+
+  Query.prototype._updated_once = false;
+
+  Query.prototype.changedLastUpdate = false;
+
+  Query.prototype.update = function() {
+    var adds, el, id, newIds, oldIds, removes, _i, _len, _ref, _ref1;
+    this.changedLastUpdate = false;
+    if (!this.isLive || !this._updated_once) {
+      this.nodeList = this.createNodeList();
+    }
+    oldIds = this.ids;
+    newIds = [];
+    _ref = this.nodeList;
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      el = _ref[_i];
+      id = GSS.setupId(el);
+      newIds.push(id);
+    }
+    _ref1 = arrayAddsRemoves(oldIds, newIds), adds = _ref1.adds, removes = _ref1.removes;
+    if (adds.length > 0) {
+      this.changedLastUpdate = true;
+      this.lastAddedIds = adds;
+    }
+    if (removes.length > 0) {
+      this.changedLastUpdate = true;
+      this.lastRemovedIds = removes;
+    }
+    this.ids = newIds;
+    return this;
+  };
+
+  return Query;
+
+})();
+
+module.exports = Query;
+
+});
 require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
-var Command, Engine, Get, Set,
+var Command, Engine, Get, Query, Set, arrayAddsRemoves,
   __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
   __slice = [].slice;
 
 require("customevent-polyfill");
+
+require("./GSS-id.js");
+
+Query = require("./Query.js");
 
 Get = require("./dom/Getter.js");
 
@@ -7536,37 +7681,121 @@ Set = require("./dom/Setter.js");
 
 Command = require("./Command.js");
 
+arrayAddsRemoves = function(old, neu, removesFromContainer) {
+  var adds, n, o, removes, _i, _j, _len, _len1;
+  adds = [];
+  removes = [];
+  for (_i = 0, _len = neu.length; _i < _len; _i++) {
+    n = neu[_i];
+    if (old.indexOf(n) === -1) {
+      adds.push(n);
+    }
+  }
+  for (_j = 0, _len1 = old.length; _j < _len1; _j++) {
+    o = old[_j];
+    if (neu.indexOf(o) === -1) {
+      if (removesFromContainer.indexOf(o) !== -1) {
+        removes.push(o);
+      }
+    }
+  }
+  return {
+    adds: adds,
+    removes: removes
+  };
+};
+
 Engine = (function() {
   function Engine(workerPath, container) {
+    var _this = this;
     this.workerPath = workerPath;
     this.container = container;
     this._execute = __bind(this._execute, this);
     this.execute = __bind(this.execute, this);
     this.dispatch_solved = __bind(this.dispatch_solved, this);
-    this.process = __bind(this.process, this);
+    this.handleWorkerMessage = __bind(this.handleWorkerMessage, this);
+    this.resetCommandsForWorker = __bind(this.resetCommandsForWorker, this);
     this.measure = __bind(this.measure, this);
     if (!this.container) {
       this.container = document;
     }
-    this.commands = new Command(this);
-    this.elements = {};
-    this.variables = {};
-    this.dimensions = {};
+    this.commander = new Command(this);
     this.worker = null;
     this.getter = new Get(this.container);
     this.setter = new Set(this.container);
     this.commandsForWorker = [];
+    this.lastCommandsForWorker = null;
     this.queryCache = {};
-    this.elsByGssId = {};
+    this.observer = new MutationObserver(function(mutations) {
+      var addsBySelector, gid, m, node, query, removesBySelector, removesFromContainer, selector, selectorsWithAdds, trigger, _i, _j, _len, _len1, _ref, _ref1;
+      trigger = false;
+      removesFromContainer = [];
+      for (_i = 0, _len = mutations.length; _i < _len; _i++) {
+        m = mutations[_i];
+        if (m.removedNodes.lenght > 0) {
+          _ref = m.removedNodes;
+          for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+            node = _ref[_j];
+            gid = GSS.getId(node);
+            if (gid != null) {
+              if (GSS.getById(gid)) {
+                removesFromContainer.push(gid);
+                trigger = true;
+              }
+            }
+          }
+        }
+      }
+      GSS._ids_killed(removesFromContainer);
+      selectorsWithAdds = [];
+      addsBySelector = {};
+      removesBySelector = {};
+      _ref1 = _this.queryCache;
+      for (selector in _ref1) {
+        query = _ref1[selector];
+        query.update();
+        if (query.changedLastUpdate) {
+          if (query.lastAddedIds.length > 0) {
+            trigger = true;
+            selectorsWithAdds.push(selector);
+            addsBySelector[selector] = query.lastAddedIds;
+          }
+          if (query.lastRemovedIds.length > 0) {
+            trigger = true;
+            removesBySelector[selector] = query.lastRemovedIds;
+          }
+        }
+      }
+      /*
+      if trigger
+        e = new CustomEvent "solverinvalidated",
+          detail:
+            addsBySelector: addsBySelector
+            removesBySelector: removesBySelector
+            removesFromContainer: removesFromContainer
+            selectorsWithAdds: selectorsWithAdds
+            engine: @
+          bubbles: true
+          cancelable: true
+        @container.dispatchEvent e
+      */
+
+      if (trigger) {
+        _this.commander.handleAddsToSelectors(selectorsWithAdds);
+        return _this.solve();
+      }
+    });
+    this.observer.observe(this.container, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true
+    });
   }
 
   Engine.prototype.run = function(ast) {
-    var astForWorker;
     this.execute(ast.commands);
-    astForWorker = {
-      commands: this.commandsForWorker
-    };
-    return this.solve(astForWorker);
+    return this.solve();
   };
 
   Engine.prototype.measure = function(el, prop) {
@@ -7575,18 +7804,23 @@ Engine = (function() {
 
   Engine.prototype.measureByGssId = function(id, prop) {
     var el;
-    el = this.elsByGssId[id];
+    el = GSS.getById(id);
     return this.measure(el, prop);
   };
 
-  Engine.prototype.process = function(message) {
+  Engine.prototype.resetCommandsForWorker = function() {
+    this.lastCommandsForWorker = this.commandsForWorker;
+    return this.commandsForWorker = [];
+  };
+
+  Engine.prototype.handleWorkerMessage = function(message) {
     var dimension, element, gid, key, values;
     values = message.data.values;
     for (key in values) {
       if (key[0] === "$") {
         gid = key.substring(1, key.indexOf("["));
         dimension = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
-        element = this.elsByGssId[gid];
+        element = GSS.getById(gid);
         if (element) {
           this.setter.set(element, dimension, values[key]);
         } else {
@@ -7617,35 +7851,41 @@ Engine = (function() {
     throw new Error("" + event.message + " (" + event.filename + ":" + event.lineno + ")");
   };
 
-  Engine.prototype.solve = function(ast) {
+  Engine.prototype.solve = function() {
+    var ast;
+    ast = {
+      commands: this.commandsForWorker
+    };
     if (!this.worker) {
       this.worker = new Worker(this.workerPath);
-      this.worker.addEventListener("message", this.process, false);
+      this.worker.addEventListener("message", this.handleWorkerMessage, false);
       this.worker.addEventListener("error", this.handleError, false);
     }
-    return this.worker.postMessage({
+    this.worker.postMessage({
       ast: ast
     });
+    return this.resetCommandsForWorker();
   };
+
+  Engine.prototype.stopped = false;
 
   Engine.prototype.stop = function() {
-    if (!this.worker) {
-      return;
+    var query, selector, _ref;
+    if (this.stopped) {
+      return this;
     }
-    return this.worker.terminate();
-  };
-
-  Engine.prototype._current_gid = 1;
-
-  Engine.prototype.gssId = function(el) {
-    var gid;
-    gid = el.getAttribute('data-gss-id');
-    if (gid == null) {
-      gid = this._current_gid++;
-      el.setAttribute('data-gss-id', gid);
+    this.observer.disconnect();
+    if (this.worker) {
+      this.worker.terminate();
     }
-    this.elsByGssId[gid] = el;
-    return gid;
+    _ref = this.queryCache;
+    for (selector in _ref) {
+      query = _ref[selector];
+      delete query.nodeList;
+      delete query.ids;
+      delete this.query;
+    }
+    return this.stopped = true;
   };
 
   Engine.prototype.execute = function(commands) {
@@ -7661,7 +7901,7 @@ Engine = (function() {
   Engine.prototype._execute = function(command, root) {
     var func, i, node, sub, _i, _len, _ref;
     node = command;
-    func = this.commands[node[0]];
+    func = this.commander[node[0]];
     if (func == null) {
       throw new Error("Engine Commands broke, couldn't find method: " + node[0]);
     }
@@ -7679,33 +7919,27 @@ Engine = (function() {
     return this.commandsForWorker.push("var", el.id + prop);
   };
 
+  Engine.prototype.registerCommands = function(commands) {
+    var command, _i, _len, _results;
+    _results = [];
+    for (_i = 0, _len = commands.length; _i < _len; _i++) {
+      command = commands[_i];
+      _results.push(this.registerCommand(command));
+    }
+    return _results;
+  };
+
   Engine.prototype.registerCommand = function(command) {
     return this.commandsForWorker.push(command);
   };
 
-  Engine.prototype.registerDomQuery = function(selector, isMulti, isLive, createNodeList) {
-    var el, id, nodeList, query, _i, _len;
+  Engine.prototype.registerDomQuery = function(o) {
+    var query, selector;
+    selector = o.selector;
     if (this.queryCache[selector] != null) {
       return this.queryCache[selector];
     } else {
-      query = {};
-      query.selector = selector;
-      query.isQuery = true;
-      query.isMulti = isMulti;
-      query.isLive = isLive;
-      nodeList = createNodeList();
-      query.nodeList = nodeList;
-      query.ids = [];
-      for (_i = 0, _len = nodeList.length; _i < _len; _i++) {
-        el = nodeList[_i];
-        id = this.gssId(el);
-        if (query.ids.indexOf(id) === -1) {
-          query.ids.push(id);
-        }
-      }
-      query.observer = new PathObserver(nodeList, 'length', function(newval, oldval) {
-        return alert('handle nodelist change');
-      });
+      query = new Query(o);
       this.queryCache[selector] = query;
       return query;
     }
@@ -7733,7 +7967,7 @@ Root commands, if bound to a dom query, will spawn commands
 to match live results of query.
 */
 
-var Command, bindCache, bindRoot, checkCache, checkIntrinsics, getSuggestValueCommand, makeTemplateFromVarId, spawnCommands,
+var Command, bindCache, bindRoot, checkCache, checkIntrinsics, getSuggestValueCommand, makeTemplateFromVarId,
   __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
 bindCache = {};
@@ -7755,66 +7989,16 @@ bindRoot = function(root, query) {
   root._is_bound = true;
   if (root._binds == null) {
     root._binds = [];
+    root._boundSelectors = [];
   }
   if (root._binds.indexOf(query) === -1) {
     root._binds.push(query);
+    root._boundSelectors.push(query.selector);
     if (query.isMulti) {
       if (root._binds.multi) {
         throw new Error("Multi el queries only allowed once per statement");
       }
       return root._binds.multi = query;
-    }
-  }
-};
-
-spawnCommands = function(root, engine, cacheKey) {
-  var command, id, joiner, multiSplit, q, queries, ready, replaces, splitter, srcString, _i, _j, _len, _len1, _ref, _results;
-  if (!root._is_bound) {
-    return engine.registerCommand(root);
-  } else {
-    if (cacheKey) {
-      bindCache[cacheKey] = root._binds;
-    }
-    queries = root._binds;
-    srcString = JSON.stringify(root);
-    replaces = {};
-    ready = true;
-    for (_i = 0, _len = queries.length; _i < _len; _i++) {
-      q = queries[_i];
-      if (q.ids.length < 0) {
-        ready = false;
-        break;
-      }
-      if (q !== queries.multi) {
-        replaces[q.selector] = q.ids[0];
-      }
-    }
-    if (ready) {
-      if (queries.multi) {
-        multiSplit = queries.multi.selector;
-        _ref = queries.multi.ids;
-        _results = [];
-        for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
-          id = _ref[_j];
-          command = srcString.split("%%" + multiSplit + "%%");
-          command = command.join("$" + id);
-          for (splitter in replaces) {
-            joiner = replaces[splitter];
-            command = command.split("%%" + splitter + "%%");
-            command = command.join("$" + joiner);
-          }
-          _results.push(engine.registerCommand(eval(command)));
-        }
-        return _results;
-      } else {
-        command = srcString;
-        for (splitter in replaces) {
-          joiner = replaces[splitter];
-          command = command.split("%%" + splitter + "%%");
-          command = command.join("$" + joiner);
-        }
-        return engine.registerCommand(eval(command));
-      }
     }
   }
 };
@@ -7827,7 +8011,7 @@ checkIntrinsics = function(root, engine, varId, prop, query) {
   var id, val, _i, _len, _ref, _results;
   if (query != null) {
     if (prop.indexOf("intrinsic-") === 0) {
-      _ref = query.ids;
+      _ref = query.lastAddedIds;
       _results = [];
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         id = _ref[_i];
@@ -7866,8 +8050,98 @@ Command = (function() {
     this['get'] = __bind(this['get'], this);
     this['varexp'] = __bind(this['varexp'], this);
     this['var'] = __bind(this['var'], this);
+    this.spawnableRoots = [];
     this.engine = engine;
   }
+
+  Command.prototype.registerSpawn = function(root, varid, prop, intrinsicQuery, checkInstrinsics) {
+    if (!root._is_bound) {
+      return this.engine.registerCommand(root);
+    } else {
+      if (varid) {
+        bindCache[varid] = root._binds;
+      }
+      root._template = JSON.stringify(root);
+      root._varid = varid;
+      root._prop = prop;
+      root._checkInstrinsics = checkInstrinsics;
+      root._intrinsicQuery = intrinsicQuery;
+      this.spawnableRoots.push(root);
+      return this.spawn(root);
+    }
+  };
+
+  Command.prototype.handleAddsToSelectors = function(selectorsWithAdds) {
+    var boundSelector, root, _i, _j, _len, _len1, _ref, _ref1;
+    _ref = this.spawnableRoots;
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      root = _ref[_i];
+      _ref1 = root._boundSelectors;
+      for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
+        boundSelector = _ref1[_j];
+        if (selectorsWithAdds.indexOf(boundSelector) !== -1) {
+          this.spawn(root);
+          break;
+        }
+      }
+    }
+    return this;
+  };
+
+  Command.prototype.spawn = function(root) {
+    var command, id, joiner, prop, q, queries, ready, replaces, rootString, splitter, template, val, _i, _j, _k, _len, _len1, _len2, _ref, _ref1, _results;
+    queries = root._binds;
+    rootString = root._template;
+    replaces = {};
+    ready = true;
+    for (_i = 0, _len = queries.length; _i < _len; _i++) {
+      q = queries[_i];
+      if (q.lastAddedIds.length < 0) {
+        ready = false;
+        break;
+      }
+      if (q !== queries.multi) {
+        replaces[q.selector] = q.lastAddedIds[0];
+      }
+    }
+    if (ready) {
+      if (queries.multi) {
+        template = rootString.split("%%" + queries.multi.selector + "%%");
+        _ref = queries.multi.lastAddedIds;
+        for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+          id = _ref[_j];
+          command = template.join("$" + id);
+          for (splitter in replaces) {
+            joiner = replaces[splitter];
+            command = command.split("%%" + splitter + "%%");
+            command = command.join("$" + joiner);
+          }
+          this.engine.registerCommand(eval(command));
+        }
+      } else {
+        command = rootString;
+        for (splitter in replaces) {
+          joiner = replaces[splitter];
+          command = command.split("%%" + splitter + "%%");
+          command = command.join("$" + joiner);
+        }
+        this.engine.registerCommand(eval(command));
+      }
+    }
+    if (root._checkInstrinsics && (root._intrinsicQuery != null)) {
+      prop = root._prop;
+      if (prop.indexOf("intrinsic-") === 0) {
+        _ref1 = root._intrinsicQuery.lastAddedIds;
+        _results = [];
+        for (_k = 0, _len2 = _ref1.length; _k < _len2; _k++) {
+          id = _ref1[_k];
+          val = this.engine.measureByGssId(id, prop.split("intrinsic-")[1]);
+          _results.push(this.engine.registerCommand(getSuggestValueCommand(id, prop, val)));
+        }
+        return _results;
+      }
+    }
+  };
 
   Command.prototype['var'] = function(self, varId, prop, query) {
     self.splice(2, 10);
@@ -7875,14 +8149,13 @@ Command = (function() {
     if (self._is_bound) {
       self.push("%%" + query.selector + "%%");
     }
-    spawnCommands(self, this.engine, varId);
-    return checkIntrinsics(self, this.engine, varId, prop, query);
+    return this.registerSpawn(self, varId, prop, query, true);
   };
 
   Command.prototype['varexp'] = function(self, varId, expression, zzz) {
     self.splice(3, 10);
     self[1] = makeTemplateFromVarId(varId);
-    return spawnCommands(self, this.engine, varId);
+    return this.registerSpawn(self, varId);
   };
 
   Command.prototype['get'] = function(root, varId) {
@@ -7911,27 +8184,27 @@ Command = (function() {
   };
 
   Command.prototype['eq'] = function(self, e1, e2, s, w) {
-    return spawnCommands(self, this.engine);
+    return this.registerSpawn(self);
   };
 
   Command.prototype['lte'] = function(self, e1, e2, s, w) {
-    return spawnCommands(self, this.engine);
+    return this.registerSpawn(self);
   };
 
   Command.prototype['gte'] = function(self, e1, e2, s, w) {
-    return spawnCommands(self, this.engine);
+    return this.registerSpawn(self);
   };
 
   Command.prototype['lt'] = function(self, e1, e2, s, w) {
-    return spawnCommands(self, this.engine);
+    return this.registerSpawn(self);
   };
 
   Command.prototype['gt'] = function(self, e1, e2, s, w) {
-    return spawnCommands(self, this.engine);
+    return this.registerSpawn(self);
   };
 
   Command.prototype['stay'] = function(self) {
-    return spawnCommands(self, this.engine);
+    return this.registerSpawn(self);
   };
 
   Command.prototype['strength'] = function(root, s) {
@@ -7941,8 +8214,13 @@ Command = (function() {
   Command.prototype['$class'] = function(root, sel) {
     var query,
       _this = this;
-    query = this.engine.registerDomQuery("." + sel, true, true, function() {
-      return _this.engine.container.getElementsByClassName(sel);
+    query = this.engine.registerDomQuery({
+      selector: "." + sel,
+      isMulti: true,
+      isLive: true,
+      createNodeList: function() {
+        return _this.engine.container.getElementsByClassName(sel);
+      }
     });
     bindRoot(root, query);
     return query;
@@ -7951,8 +8229,13 @@ Command = (function() {
   Command.prototype['$tag'] = function(root, sel) {
     var query,
       _this = this;
-    query = this.engine.registerDomQuery(sel, true, true, function() {
-      return _this.engine.container.getElementsByTagName(sel);
+    query = this.engine.registerDomQuery({
+      selector: sel,
+      isMulti: true,
+      isLive: true,
+      createNodeList: function() {
+        return _this.engine.container.getElementsByTagName(sel);
+      }
     });
     bindRoot(root, query);
     return query;
@@ -7965,10 +8248,15 @@ Command = (function() {
   Command.prototype['$id'] = function(root, sel) {
     var query,
       _this = this;
-    query = this.engine.registerDomQuery("#" + sel, false, false, function() {
-      var el;
-      el = document.getElementById(sel);
-      return [el];
+    query = this.engine.registerDomQuery({
+      selector: "#" + sel,
+      isMulti: false,
+      isLive: false,
+      createNodeList: function() {
+        var el;
+        el = document.getElementById(sel);
+        return [el];
+      }
     });
     bindRoot(root, query);
     return query;
@@ -8137,55 +8425,38 @@ module.exports = Setter;
 
 });
 require.register("gss/lib/gss.js", function(exports, require, module){
-var Engine, Gss, compiler;
+var Engine, GSS, compiler, key, styleTags, val, _ref;
 
 compiler = require("gss-compiler");
 
 Engine = require("gss-engine");
 
-Gss = function(_arg) {
-  var container, worker;
-  worker = _arg.worker, container = _arg.container;
+document.addEventListener("DOMContentLoaded", function(e) {
+  return GSS.boot();
+});
+
+GSS = function(_arg) {
+  var container, engine, rules, worker;
+  worker = _arg.worker, container = _arg.container, rules = _arg.rules;
   if (!worker) {
-    worker = Gss.worker;
+    worker = GSS.worker;
   }
-  this.container = (container ? container : document);
-  this.engine = new Engine(worker, container);
-  return this;
+  container = (container ? container : document);
+  engine = new Engine(worker, container);
+  engine.compile = function(rules) {
+    return engine.run(GSS.compile(rules));
+  };
+  if (rules) {
+    engine.compile(rules);
+  }
+  return engine;
 };
 
-Gss.worker = '../browser/the-gss-engine/worker/gss-solver.js';
+GSS.engines = [];
 
-Gss.processStyleTag = function(style, o) {
-  var container, gss, rules;
-  rules = style.innerHTML;
-  container = style.parentElement;
-  if (container.tagName === "HEAD") {
-    container = document;
-  }
-  o.container = container;
-  gss = new Gss(o);
-  return gss.run(rules);
-};
+GSS.worker = '../browser/the-gss-engine/worker/gss-solver.js';
 
-Gss.spawn = function(o, from) {
-  var style, styles, _i, _len, _results;
-  if (o == null) {
-    o = {};
-  }
-  if (from == null) {
-    from = document;
-  }
-  styles = from.querySelectorAll("style[type='text/gss']");
-  _results = [];
-  for (_i = 0, _len = styles.length; _i < _len; _i++) {
-    style = styles[_i];
-    _results.push(Gss.processStyleTag(style, o));
-  }
-  return _results;
-};
-
-Gss.prototype.run = function(rules) {
+GSS.compile = function(rules) {
   var ast;
   ast = void 0;
   if (typeof rules === "string") {
@@ -8195,16 +8466,79 @@ Gss.prototype.run = function(rules) {
   } else {
     throw new Error("Unrecognized GSS rule format. Should be string or AST");
   }
-  this.engine.run(ast);
-  return this;
+  console.log(ast);
+  return ast;
 };
 
-Gss.prototype.stop = function() {
-  this.engine.stop();
-  return this;
+GSS.boot = function() {
+  var config, observer;
+  GSS.spawn();
+  observer = new MutationObserver(function(mutations) {
+    return GSS.spawn();
+  });
+  config = {
+    subtree: true,
+    childList: true,
+    attributes: false,
+    characterData: false
+  };
+  return observer.observe(document, config);
 };
 
-module.exports = Gss;
+GSS.processStyleTag = function(style, o) {
+  var container, rules;
+  if (o == null) {
+    o = {};
+  }
+  if (style.getAttribute("type") === 'text/gss') {
+    if (!style._gss_processed) {
+      rules = style.innerHTML;
+      container = style.parentElement;
+      if (container.tagName === "HEAD") {
+        container = document;
+      }
+      o.container = container;
+      o.rules = rules;
+      GSS(o);
+      return style._gss_processed = true;
+    }
+  }
+};
+
+styleTags = GSS.styleTags = null;
+
+GSS.spawn = function(o, from) {
+  var style, _i, _len, _results;
+  if (o == null) {
+    o = {};
+  }
+  if (from == null) {
+    from = document;
+  }
+  if (!styleTags) {
+    GSS.styleTags = styleTags = from.getElementsByTagName("style");
+  }
+  _results = [];
+  for (_i = 0, _len = styleTags.length; _i < _len; _i++) {
+    style = styleTags[_i];
+    _results.push(GSS.processStyleTag(style, o));
+  }
+  return _results;
+};
+
+GSS.stopAll = function() {
+  return alert('not implemented');
+};
+
+if (window.GSS != null) {
+  _ref = window.GSS;
+  for (key in _ref) {
+    val = _ref[key];
+    GSS[key] = val;
+  }
+}
+
+window.GSS = GSS;
 
 });
 require.alias("the-gss-compiler/lib/gss-compiler.js", "gss/deps/gss-compiler/lib/gss-compiler.js");
@@ -8229,6 +8563,8 @@ require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-vfl-compiler/inde
 
 require.alias("the-gss-compiler/lib/gss-compiler.js", "the-gss-compiler/index.js");
 
+require.alias("the-gss-engine/lib/GSS-id.js", "gss/deps/gss-engine/lib/GSS-id.js");
+require.alias("the-gss-engine/lib/Query.js", "gss/deps/gss-engine/lib/Query.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/lib/Engine.js");
 require.alias("the-gss-engine/lib/Command.js", "gss/deps/gss-engine/lib/Command.js");
 require.alias("the-gss-engine/lib/dom/Getter.js", "gss/deps/gss-engine/lib/dom/Getter.js");
