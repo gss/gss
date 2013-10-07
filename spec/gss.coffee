@@ -1,5 +1,3 @@
-require 'gss'
-
 el = (id) ->
   if typeof id is "string" then return document.getElementById(id) else return id
 

@@ -1,3 +1,4 @@
+;(function(){
 
 /**
  * Require the given path.
@@ -26,10 +27,14 @@ function require(path, parent, orig) {
   // perform real require()
   // by invoking the module's
   // registered function
-  if (!module.exports) {
-    module.exports = {};
-    module.client = module.component = true;
-    module.call(this, module.exports, require.relative(resolved), module);
+  if (!module._resolving && !module.exports) {
+    var mod = {};
+    mod.exports = {};
+    mod.client = mod.component = true;
+    module._resolving = true;
+    module.call(this, mod.exports, require.relative(resolved), mod);
+    delete module._resolving;
+    module.exports = mod.exports;
   }
 
   return module.exports;
@@ -8541,28 +8546,27 @@ if (window.GSS != null) {
 window.GSS = GSS;
 
 });
+
+
+
+
 require.alias("the-gss-compiler/lib/gss-compiler.js", "gss/deps/gss-compiler/lib/gss-compiler.js");
 require.alias("the-gss-compiler/lib/gss-compiler.js", "gss/deps/gss-compiler/index.js");
 require.alias("the-gss-compiler/lib/gss-compiler.js", "gss-compiler/index.js");
 require.alias("the-gss-preparser/lib/gss-preparser.js", "the-gss-compiler/deps/gss-preparser/lib/gss-preparser.js");
 require.alias("the-gss-preparser/lib/gss-preparser.js", "the-gss-compiler/deps/gss-preparser/index.js");
 require.alias("the-gss-preparser/lib/gss-preparser.js", "the-gss-preparser/index.js");
-
 require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-compiler/deps/ccss-compiler/lib/ccss-compiler.js");
 require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-compiler/deps/ccss-compiler/index.js");
 require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-ccss-compiler/index.js");
-
 require.alias("the-gss-vfl-compiler/lib/vfl-compiler.js", "the-gss-compiler/deps/vfl-compiler/lib/vfl-compiler.js");
 require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-compiler/deps/vfl-compiler/lib/compiler.js");
 require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-compiler/deps/vfl-compiler/index.js");
 require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-vfl-compiler/deps/ccss-compiler/lib/ccss-compiler.js");
 require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-vfl-compiler/deps/ccss-compiler/index.js");
 require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-ccss-compiler/index.js");
-
 require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-vfl-compiler/index.js");
-
 require.alias("the-gss-compiler/lib/gss-compiler.js", "the-gss-compiler/index.js");
-
 require.alias("the-gss-engine/lib/GSS-id.js", "gss/deps/gss-engine/lib/GSS-id.js");
 require.alias("the-gss-engine/lib/Query.js", "gss/deps/gss-engine/lib/Query.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/lib/Engine.js");
@@ -8574,8 +8578,11 @@ require.alias("the-gss-engine/lib/Engine.js", "gss-engine/index.js");
 require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "the-gss-engine/deps/customevent-polyfill/CustomEvent.js");
 require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "the-gss-engine/deps/customevent-polyfill/index.js");
 require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "d4tocchini-customevent-polyfill/index.js");
-
 require.alias("the-gss-engine/lib/Engine.js", "the-gss-engine/index.js");
-
-require.alias("gss/lib/gss.js", "gss/index.js");
-
+require.alias("gss/lib/gss.js", "gss/index.js");if (typeof exports == "object") {
+  module.exports = require("gss");
+} else if (typeof define == "function" && define.amd) {
+  define(function(){ return require("gss"); });
+} else {
+  this["gss"] = require("gss");
+}})();

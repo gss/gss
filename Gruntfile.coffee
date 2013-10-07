@@ -4,16 +4,13 @@ module.exports = ->
     pkg: @file.readJSON 'package.json'
 
     # Build the browser Component
-    component:
-      install:
-        options:
-          action: 'install'
-    component_build:
-      'gss':
-        output: './browser/'
-        config: './component.json'
-        scripts: true
-        styles: false
+    exec:
+      nuke_main:
+        command: 'rm -rf ./components/*/'
+      main_install:
+        command: './node_modules/.bin/component install'
+      main_build:
+        command: './node_modules/.bin/component build --standalone gss -o browser -n gss -c'
 
     # JavaScript minification for the browser
     uglify:
@@ -95,9 +92,8 @@ module.exports = ->
           detailedError: true
 
   # Grunt plugins used for building
-  @loadNpmTasks 'grunt-component'
   @loadNpmTasks 'grunt-contrib-coffee'
-  @loadNpmTasks 'grunt-component-build'
+  @loadNpmTasks 'grunt-exec'
   @loadNpmTasks 'grunt-contrib-uglify'
 
   # Grunt plugins used for testing
@@ -109,7 +105,7 @@ module.exports = ->
   @loadNpmTasks 'grunt-contrib-connect'
   @loadNpmTasks 'grunt-saucelabs'
 
-  @registerTask 'build', ['component', 'coffee', 'component_build', 'uglify']
-  @registerTask 'test', ['build', 'jshint', 'mocha_phantomjs']
-  @registerTask 'crossbrowser', ['build', 'jshint', 'mocha_phantomjs', 'connect', 'saucelabs-mocha']
+  @registerTask 'build', ['exec', 'uglify']
+  @registerTask 'test', ['build', 'coffee', 'mocha_phantomjs']
+  @registerTask 'crossbrowser', ['build', 'coffee', 'jshint', 'mocha_phantomjs', 'connect', 'saucelabs-mocha']
   @registerTask 'default', ['build']
