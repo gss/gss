@@ -28,8 +28,11 @@ module.exports = ->
 
     # Automated recompilation and testing when developing
     watch:
+      build:
+        files: ['spec/*.coffee', 'src/*.coffee']
+        tasks: ['build']
       test:
-        files: ['spec/*.coffee', 'lib/*.js']
+        files: ['spec/*.coffee', 'src/*.coffee']
         tasks: ['test']
 
     # CoffeeScript compilation
@@ -42,13 +45,13 @@ module.exports = ->
         src: ['**.coffee']
         dest: 'spec'
         ext: '.js'
-      helpers:
+      src:
         options:
           bare: true
         expand: true
-        cwd: 'spec/helpers'
+        cwd: 'src'
         src: ['**.coffee']
-        dest: 'spec/helpers'
+        dest: 'lib'
         ext: '.js'
 
     # BDD tests on browser
@@ -106,7 +109,7 @@ module.exports = ->
   @loadNpmTasks 'grunt-contrib-connect'
   @loadNpmTasks 'grunt-saucelabs'
 
-  @registerTask 'build', ['component', 'component_build', 'coffee', 'uglify']
-  @registerTask 'test', ['jshint', 'build',  'mocha_phantomjs']
-  @registerTask 'crossbrowser', ['jshint', 'coffee', 'build', 'mocha_phantomjs', 'connect', 'saucelabs-mocha']
+  @registerTask 'build', ['component', 'coffee', 'component_build', 'uglify']
+  @registerTask 'test', ['build', 'jshint', 'mocha_phantomjs']
+  @registerTask 'crossbrowser', ['build', 'jshint', 'mocha_phantomjs', 'connect', 'saucelabs-mocha']
   @registerTask 'default', ['build']
