@@ -29,8 +29,5 @@
     "Gruntfile.coffee",
     "index.html",
     ".travis.yml"
-  ],
-  "dependencies": {
-    "polymer": "~0.0.20130912"
-  }
+  ]
 }
