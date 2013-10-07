@@ -8471,7 +8471,6 @@ GSS.compile = function(rules) {
   } else {
     throw new Error("Unrecognized GSS rule format. Should be string or AST");
   }
-  console.log(ast);
   return ast;
 };
 
