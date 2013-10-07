@@ -59,7 +59,7 @@ GSS.boot = () ->
   #Platform.performMicrotaskCheckpoint()
 
 GSS.processStyleTag = (style, o={}) ->
-  if style.getAttribute("type") is 'text/gss'    
+  if style.getAttribute("type") is 'text/gss'
     if !style._gss_processed
       rules = style.innerHTML
       container = style.parentElement
@@ -80,8 +80,7 @@ GSS.spawn = (o={}, from=document) ->
 GSS.stopAll = ->
   alert 'not implemented'
 
-
-# marshal in plugins
+# marshal in plugin 
 if window.GSS?
   for key,val of window.GSS
     GSS[key] = val
