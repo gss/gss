@@ -43,7 +43,6 @@ GSS.compile = (rules) ->
     ast = rules
   else
     throw new Error("Unrecognized GSS rule format. Should be string or AST")
-  console.log(ast);
   return ast
 
 GSS.boot = () ->
@@ -60,7 +59,7 @@ GSS.boot = () ->
   #Platform.performMicrotaskCheckpoint()
 
 GSS.processStyleTag = (style, o={}) ->
-  if style.getAttribute("type") is 'text/gss'    
+  if style.getAttribute("type") is 'text/gss'
     if !style._gss_processed
       rules = style.innerHTML.trim()
       container = style.parentElement
@@ -81,8 +80,7 @@ GSS.spawn = (o={}, from=document) ->
 GSS.stopAll = ->
   alert 'not implemented'
 
-
-# marshal in plugins
+# marshal in plugin 
 if window.GSS?
   for key,val of window.GSS
     GSS[key] = val
