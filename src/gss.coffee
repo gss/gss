@@ -62,7 +62,7 @@ GSS.boot = () ->
 GSS.processStyleTag = (style, o={}) ->
   if style.getAttribute("type") is 'text/gss'    
     if !style._gss_processed
-      rules = style.innerHTML
+      rules = style.innerHTML.trim()
       container = style.parentElement
       if container.tagName is "HEAD" then container = document
       o.container = container
