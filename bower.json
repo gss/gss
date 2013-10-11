@@ -15,6 +15,7 @@
     "components",
     "node_modules",
     "bower_components",
+    "src",
     "lib",
     "spec",
     "style",

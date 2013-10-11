@@ -82,10 +82,10 @@ layout: default
     if (runtime) {
       runtime.stop();
     }
-    runtime = new GSS('/browser/gss-solver.min.js', container);
-    runtime.engine.onError = function (e) {
-      reportError(e.message);
-    };
-    runtime.run(rules);
+    runtime = GSS({
+      worker: '/browser/gss-solver.min.js',
+      container: container,
+      rules: rules
+    });
   }
 </script>
