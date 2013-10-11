@@ -1,6 +1,10 @@
 compiler = require("gss-compiler")
 
 Engine = require("gss-engine")
+
+# Polyfill
+unless window.MutationObserver
+  window.MutationObserver = window.JsMutationObserver
   
 
 #$(function(){

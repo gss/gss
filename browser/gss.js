@@ -8648,6 +8648,10 @@ compiler = require("gss-compiler");
 
 Engine = require("gss-engine");
 
+if (!window.MutationObserver) {
+  window.MutationObserver = window.JsMutationObserver;
+}
+
 document.addEventListener("DOMContentLoaded", function(e) {
   return GSS.boot();
 });
