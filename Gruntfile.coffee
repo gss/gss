@@ -80,6 +80,7 @@ module.exports = ->
             browserName: 'chrome'
           ,
             browserName: 'firefox'
+            platform: 'WIN8'
           ,
             browserName: 'safari'
             platform: 'OS X 10.8'
