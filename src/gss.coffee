@@ -5,7 +5,6 @@ Engine = require("gss-engine")
 # Polyfill
 unless window.MutationObserver
   window.MutationObserver = window.JsMutationObserver
-  
 
 #$(function(){
 #  // your code
@@ -25,7 +24,7 @@ GSS = ({worker, container, rules}) ->
   engine = new Engine(worker, container)
   
   # attach plugins to engine
-  engine.compile = (rules) ->    
+  engine.compile = (rules) ->
     engine.run GSS.compile rules
   
   #
