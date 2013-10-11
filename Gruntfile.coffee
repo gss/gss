@@ -56,8 +56,14 @@ module.exports = ->
       all: ['spec/runner.html']
 
     # Syntax checking
-    jshint:
-      src: ['lib/*.js']
+    coffeelint:
+      core:
+        files:
+          src: ['src/*.coffee']
+        options:
+          max_line_length:
+            value: 80
+            level: 'warn'
 
     # Cross-browser testing
     connect:
@@ -97,7 +103,7 @@ module.exports = ->
   @loadNpmTasks 'grunt-contrib-uglify'
 
   # Grunt plugins used for testing
-  @loadNpmTasks 'grunt-contrib-jshint'
+  @loadNpmTasks 'grunt-coffeelint'
   @loadNpmTasks 'grunt-mocha-phantomjs'
   @loadNpmTasks 'grunt-contrib-watch'
 
@@ -105,7 +111,7 @@ module.exports = ->
   @loadNpmTasks 'grunt-contrib-connect'
   @loadNpmTasks 'grunt-saucelabs'
 
-  @registerTask 'build', ['exec', 'coffee', 'uglify']
-  @registerTask 'test', ['build', 'mocha_phantomjs']
-  @registerTask 'crossbrowser', ['build', 'coffee', 'jshint', 'mocha_phantomjs', 'connect', 'saucelabs-mocha']
+  @registerTask 'build', ['exec', 'uglify']
+  @registerTask 'test', ['build', 'coffeelint', 'coffee', 'mocha_phantomjs']
+  @registerTask 'crossbrowser', ['test', 'connect', 'saucelabs-mocha']
   @registerTask 'default', ['build']

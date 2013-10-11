@@ -21,11 +21,11 @@
     "grunt-mocha-phantomjs": "~0.2.8",
     "grunt-contrib-uglify": "~0.2.1",
     "grunt-contrib-coffee": "~0.7.0",
-    "grunt-contrib-jshint": "~0.6.0",
     "grunt-saucelabs": "~4.0.4",
     "grunt-contrib-connect": "~0.3.0",
     "grunt-exec": "~0.4.2",
-    "component": "~0.17.6"
+    "component": "~0.17.6",
+    "grunt-coffeelint": "0.0.7"
   },
   "keywords": [],
   "scripts": {

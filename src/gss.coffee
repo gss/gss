@@ -83,7 +83,7 @@ GSS.spawn = (o={}, from=document) ->
 GSS.stopAll = ->
   alert 'not implemented'
 
-# marshal in plugin 
+# marshal in plugin
 if window.GSS?
   for key,val of window.GSS
     GSS[key] = val
