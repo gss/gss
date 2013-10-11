@@ -1522,6 +1522,7 @@ module.exports = (function(){
         "Var": parse_Var,
         "VarNames": parse_VarNames,
         "Selector": parse_Selector,
+        "QuerySelectorChars": parse_QuerySelectorChars,
         "ReservedPseudos": parse_ReservedPseudos,
         "NameChars": parse_NameChars,
         "NameCharsWithSpace": parse_NameCharsWithSpace,
@@ -2904,6 +2905,14 @@ module.exports = (function(){
                 } else if (v === 'cy') {
                   v = 'center-y';
                 }
+                // normalize window var names
+                if ($.selector === '::window') {
+                  if (v === 'right') {
+                    v = 'width'
+                  } else if (v === 'bottom') {
+                    v = 'height'
+                  }
+                }
                 id = "["+v+"]";
                 id = $.selector + id;
                 // extract variable expresssions
@@ -2938,14 +2947,37 @@ module.exports = (function(){
                     parser.addVar(['varexp',id,['plus',['get',_id1],['divide',['get',_id2],2]], $.ast], id);                       break;
                   default:
                     parser.addVar(['var',id,v,$.ast],id);
-                }                        
+                }
+                // add constraints for window x & y to be zero
+                /*if ($.selector === '::window') {
+                  if (v === 'x' || v === 'center-x') {
+                    parser.addC([
+                      'eq',
+                      ['get', '::window[x]'],
+                      ['number', 0],
+                      'required'
+                    ]);
+                  } else if (v === 'y' || v === 'center-y') {
+                    parser.addC([
+                      'eq',
+                      ['get', '::window[y]'],
+                      ['number', 0],
+                      'required'
+                    ]);
+                  }
+                }*/
               }
               else {
                 id = "["+v+"]";
-                parser.addVar(['var',id,v],id);
+                parser.addVar(['var',id],id);
                 // ['_dimensionize',['get','width'],['get','height']]
               }
-              return ['get',id];      
+              if ($.selector) {
+                return ['get',id,$.selector];
+              } else {
+                return ['get',id];
+              }
+              
             })(pos0, result0[0], result0[2]);
         }
         if (result0 === null) {
@@ -3050,28 +3082,42 @@ module.exports = (function(){
           if (result0 === null) {
             pos0 = pos;
             pos1 = pos;
-            if (input.charCodeAt(pos) === 36) {
-              result0 = "$";
-              pos++;
+            if (input.substr(pos, 2) === "$(") {
+              result0 = "$(";
+              pos += 2;
             } else {
               result0 = null;
               if (reportFailures === 0) {
-                matchFailed("\"$\"");
+                matchFailed("\"$(\"");
               }
             }
             if (result0 !== null) {
-              result2 = parse_NameChars();
+              result2 = parse_QuerySelectorChars();
               if (result2 !== null) {
                 result1 = [];
                 while (result2 !== null) {
                   result1.push(result2);
-                  result2 = parse_NameChars();
+                  result2 = parse_QuerySelectorChars();
                 }
               } else {
                 result1 = null;
               }
               if (result1 !== null) {
-                result0 = [result0, result1];
+                if (input.charCodeAt(pos) === 41) {
+                  result2 = ")";
+                  pos++;
+                } else {
+                  result2 = null;
+                  if (reportFailures === 0) {
+                    matchFailed("\")\"");
+                  }
+                }
+                if (result2 !== null) {
+                  result0 = [result0, result1, result2];
+                } else {
+                  result0 = null;
+                  pos = pos1;
+                }
               } else {
                 result0 = null;
                 pos = pos1;
@@ -3145,8 +3191,24 @@ module.exports = (function(){
         return result0;
       }
       
+      function parse_QuerySelectorChars() {
+        var result0;
+        
+        if (/^[a-zA-Z0-9#.\-_$=:+>'" \][]/.test(input.charAt(pos))) {
+          result0 = input.charAt(pos);
+          pos++;
+        } else {
+          result0 = null;
+          if (reportFailures === 0) {
+            matchFailed("[a-zA-Z0-9#.\\-_$=:+>'\" \\][]");
+          }
+        }
+        return result0;
+      }
+      
       function parse_ReservedPseudos() {
         var result0;
+        var pos0;
         
         if (input.substr(pos, 4) === "this") {
           result0 = "this";
@@ -3158,25 +3220,54 @@ module.exports = (function(){
           }
         }
         if (result0 === null) {
-          if (input.substr(pos, 8) === "viewport") {
-            result0 = "viewport";
+          if (input.substr(pos, 8) === "document") {
+            result0 = "document";
             pos += 8;
           } else {
             result0 = null;
             if (reportFailures === 0) {
-              matchFailed("\"viewport\"");
+              matchFailed("\"document\"");
             }
           }
           if (result0 === null) {
-            if (input.substr(pos, 8) === "document") {
-              result0 = "document";
+            if (input.substr(pos, 4) === "host") {
+              result0 = "host";
+              pos += 4;
+            } else {
+              result0 = null;
+              if (reportFailures === 0) {
+                matchFailed("\"host\"");
+              }
+            }
+          }
+        }
+        if (result0 === null) {
+          pos0 = pos;
+          if (input.substr(pos, 6) === "window") {
+            result0 = "window";
+            pos += 6;
+          } else {
+            result0 = null;
+            if (reportFailures === 0) {
+              matchFailed("\"window\"");
+            }
+          }
+          if (result0 === null) {
+            if (input.substr(pos, 8) === "viewport") {
+              result0 = "viewport";
               pos += 8;
             } else {
               result0 = null;
               if (reportFailures === 0) {
-                matchFailed("\"document\"");
+                matchFailed("\"viewport\"");
               }
             }
+          }
+          if (result0 !== null) {
+            result0 = (function(offset) {return "window"})(pos0);
+          }
+          if (result0 === null) {
+            pos = pos0;
           }
         }
         return result0;
@@ -7539,7 +7630,7 @@ if (window.GSS) {
 
 GSS._id_counter = 1;
 
-GSS._byIdCache = {};
+GSS._byIdCache = [];
 
 GSS._ids_killed = function(ids) {
   var id, _i, _len, _results;
@@ -7556,7 +7647,7 @@ GSS.getById = function(id) {
   if (GSS._byIdCache[id]) {
     return GSS._byIdCache[id];
   }
-  el = document.querySelector("[data-gss-id=" + id + "]");
+  el = document.querySelector('[data-gss-id="#{id}"]');
   return el;
 };
 
@@ -7572,8 +7663,10 @@ GSS.setupId = function(el) {
 };
 
 GSS.getId = function(el) {
-  var gid;
-  return gid = el.getAttribute('data-gss-id');
+  if (el.getAttribute) {
+    return el.getAttribute('data-gss-id');
+  }
+  return null;
 };
 
 if (!window.GSS) {
@@ -7584,7 +7677,7 @@ if (!window.GSS) {
 require.register("the-gss-engine/lib/Query.js", function(exports, require, module){
 var Query, arrayAddsRemoves;
 
-arrayAddsRemoves = function(old, neu, removesFromContainer) {
+arrayAddsRemoves = function(old, neu) {
   var adds, n, o, removes, _i, _j, _len, _len1;
   adds = [];
   removes = [];
@@ -7597,9 +7690,7 @@ arrayAddsRemoves = function(old, neu, removesFromContainer) {
   for (_j = 0, _len1 = old.length; _j < _len1; _j++) {
     o = old[_j];
     if (neu.indexOf(o) === -1) {
-      if ((removesFromContainer != null ? typeof removesFromContainer.indexOf === "function" ? removesFromContainer.indexOf(o) : void 0 : void 0) !== -1) {
-        removes.push(o);
-      }
+      removes.push(o);
     }
   }
   return {
@@ -7623,7 +7714,7 @@ Query = (function() {
     })();
     this.isMulti = o.isMulti || false;
     this.isLive = o.isLive || false;
-    this.ids = [];
+    this.ids = o.ids || [];
     this.lastAddedIds = [];
     this.lastRemovedIds = [];
     this.lastLocalRemovedIds = [];
@@ -7652,12 +7743,12 @@ Query = (function() {
     _ref1 = arrayAddsRemoves(oldIds, newIds), adds = _ref1.adds, removes = _ref1.removes;
     if (adds.length > 0) {
       this.changedLastUpdate = true;
-      this.lastAddedIds = adds;
     }
+    this.lastAddedIds = adds;
     if (removes.length > 0) {
       this.changedLastUpdate = true;
-      this.lastRemovedIds = removes;
     }
+    this.lastRemovedIds = removes;
     this.ids = newIds;
     return this;
   };
@@ -7671,8 +7762,7 @@ module.exports = Query;
 });
 require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
 var Command, Engine, Get, Query, Set, arrayAddsRemoves,
-  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
-  __slice = [].slice;
+  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
 require("customevent-polyfill");
 
@@ -7715,7 +7805,6 @@ Engine = (function() {
     var _this = this;
     this.workerPath = workerPath;
     this.container = container;
-    this._execute = __bind(this._execute, this);
     this.execute = __bind(this.execute, this);
     this.dispatch_solved = __bind(this.dispatch_solved, this);
     this.handleWorkerMessage = __bind(this.handleWorkerMessage, this);
@@ -7732,42 +7821,60 @@ Engine = (function() {
     this.lastCommandsForWorker = null;
     this.queryCache = {};
     this.observer = new MutationObserver(function(mutations) {
-      var addsBySelector, gid, m, node, query, removesBySelector, removesFromContainer, selector, selectorsWithAdds, trigger, _i, _j, _len, _len1, _ref, _ref1;
+      var addsBySelector, gid, m, node, query, removedIds, removes, removesFromContainer, rid, selector, selectorsWithAdds, trigger, trigger_addsToSelectors, trigger_removes, trigger_removesFromContainer, _i, _j, _k, _len, _len1, _len2, _ref, _ref1;
       trigger = false;
+      trigger_removes = false;
+      trigger_removesFromContainer = false;
+      trigger_addsToSelectors = false;
+      removes = [];
       removesFromContainer = [];
       for (_i = 0, _len = mutations.length; _i < _len; _i++) {
         m = mutations[_i];
-        if (m.removedNodes.lenght > 0) {
+        if (m.removedNodes.length > 0) {
           _ref = m.removedNodes;
           for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
             node = _ref[_j];
             gid = GSS.getId(node);
             if (gid != null) {
               if (GSS.getById(gid)) {
-                removesFromContainer.push(gid);
+                removes.push("$" + gid);
                 trigger = true;
+                trigger_removesFromContainer = true;
+                trigger_removes = true;
               }
             }
           }
         }
       }
-      GSS._ids_killed(removesFromContainer);
+      GSS._ids_killed(removes);
       selectorsWithAdds = [];
       addsBySelector = {};
-      removesBySelector = {};
       _ref1 = _this.queryCache;
       for (selector in _ref1) {
         query = _ref1[selector];
         query.update();
         if (query.changedLastUpdate) {
           if (query.lastAddedIds.length > 0) {
-            trigger = true;
             selectorsWithAdds.push(selector);
             addsBySelector[selector] = query.lastAddedIds;
+            trigger = true;
+            trigger_addsToSelectors = true;
           }
           if (query.lastRemovedIds.length > 0) {
             trigger = true;
-            removesBySelector[selector] = query.lastRemovedIds;
+            trigger_removes = true;
+            removedIds = query.lastRemovedIds;
+            for (_k = 0, _len2 = removedIds.length; _k < _len2; _k++) {
+              rid = removedIds[_k];
+              rid = "$" + rid;
+              if (trigger_removesFromContainer) {
+                if (removes.indexOf(rid) === -1) {
+                  removes.push(selector + rid);
+                }
+              } else {
+                removes.push(selector + rid);
+              }
+            }
           }
         }
       }
@@ -7785,23 +7892,44 @@ Engine = (function() {
         @container.dispatchEvent e
       */
 
-      if (trigger) {
+      if (trigger_removes) {
+        _this.commander.handleRemoves(removes);
+      }
+      if (trigger_addsToSelectors) {
         _this.commander.handleAddsToSelectors(selectorsWithAdds);
+      }
+      if (trigger) {
         return _this.solve();
       }
     });
-    this.observer.observe(this.container, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      characterData: true
-    });
   }
+
+  Engine.prototype._is_observing = false;
+
+  Engine.prototype.observe = function() {
+    if (!this._is_observing) {
+      this.observer.observe(this.container, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: false
+      });
+      return this._is_observing = true;
+    }
+  };
+
+  Engine.prototype.unobserve = function() {
+    this._is_observing = false;
+    return this.observer.disconnect();
+  };
 
   Engine.prototype.run = function(ast) {
     this.execute(ast.commands);
-    return this.solve();
+    this.solve();
+    return this.observe();
   };
+
+  Engine.prototype.teardown = function() {};
 
   Engine.prototype.measure = function(el, prop) {
     return this.getter.measure(el, prop);
@@ -7820,6 +7948,7 @@ Engine = (function() {
 
   Engine.prototype.handleWorkerMessage = function(message) {
     var dimension, element, gid, key, values;
+    this.unobserve();
     values = message.data.values;
     for (key in values) {
       if (key[0] === "$") {
@@ -7833,6 +7962,7 @@ Engine = (function() {
         }
       }
     }
+    this.observe();
     return this.dispatch_solved(values);
   };
 
@@ -7879,7 +8009,7 @@ Engine = (function() {
     if (this.stopped) {
       return this;
     }
-    this.observer.disconnect();
+    this.unobserve();
     if (this.worker) {
       this.worker.terminate();
     }
@@ -7894,30 +8024,7 @@ Engine = (function() {
   };
 
   Engine.prototype.execute = function(commands) {
-    var command, _i, _len, _results;
-    _results = [];
-    for (_i = 0, _len = commands.length; _i < _len; _i++) {
-      command = commands[_i];
-      _results.push(this._execute(command, command));
-    }
-    return _results;
-  };
-
-  Engine.prototype._execute = function(command, root) {
-    var func, i, node, sub, _i, _len, _ref;
-    node = command;
-    func = this.commander[node[0]];
-    if (func == null) {
-      throw new Error("Engine Commands broke, couldn't find method: " + node[0]);
-    }
-    _ref = node.slice(1, +node.length + 1 || 9e9);
-    for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
-      sub = _ref[i];
-      if (sub instanceof Array) {
-        node.splice(i + 1, 1, this._execute(sub, root));
-      }
-    }
-    return func.call.apply(func, [this, root].concat(__slice.call(node.slice(1, node.length))));
+    return this.commander.execute(commands);
   };
 
   Engine.prototype._addVarCommandsForElements = function(elements) {
@@ -7950,14 +8057,6 @@ Engine = (function() {
     }
   };
 
-  Engine.prototype.onElementsAdded = function(nodelist, callback) {
-    var newEls;
-    newEls = ['TBD...'];
-    return callback.apply(this, newEls);
-  };
-
-  Engine.prototype.getVarsFromVarId = function(id) {};
-
   return Engine;
 
 })();
@@ -7972,8 +8071,9 @@ Root commands, if bound to a dom query, will spawn commands
 to match live results of query.
 */
 
-var Command, bindCache, bindRoot, checkCache, checkIntrinsics, getSuggestValueCommand, makeTemplateFromVarId,
-  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+var Command, bindCache, bindRoot, checkCache, checkIntrinsics, getSuggestValueCommand, makeTemplateFromVarId, _templateVarIdCache,
+  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+  __slice = [].slice;
 
 bindCache = {};
 
@@ -8008,8 +8108,8 @@ bindRoot = function(root, query) {
   }
 };
 
-getSuggestValueCommand = function(gssId, prop, val) {
-  return ['suggest', ['get', "$" + gssId + "[" + prop + "]"], ['number', val]];
+getSuggestValueCommand = function(gssId, prop, val, selector) {
+  return ['suggest', ['get', "$" + gssId + "[" + prop + "]", "" + selector + "$" + gssId], ['number', val]];
 };
 
 checkIntrinsics = function(root, engine, varId, prop, query) {
@@ -8021,20 +8121,35 @@ checkIntrinsics = function(root, engine, varId, prop, query) {
       for (_i = 0, _len = _ref.length; _i < _len; _i++) {
         id = _ref[_i];
         val = engine.measureByGssId(id, prop.split("intrinsic-")[1]);
-        _results.push(engine.registerCommand(getSuggestValueCommand(id, prop, val)));
+        _results.push(engine.registerCommand(getSuggestValueCommand(id, prop, val, query.selector)));
       }
       return _results;
     }
   }
 };
 
+_templateVarIdCache = {
+  "::window[width]": "::window[width]",
+  "::window[height]": "::window[height]",
+  "::window[x]": "::window[x]",
+  "::window[y]": "::window[y]",
+  "::window[center-x]": "::window[center-x]",
+  "::window[center-y]": "::window[center-y]"
+};
+
+window._templateVarIdCache = _templateVarIdCache;
+
 makeTemplateFromVarId = function(varId) {
   var templ, y;
+  if (_templateVarIdCache[varId]) {
+    return _templateVarIdCache[varId];
+  }
   templ = varId;
   y = varId.split("[");
   if (y[0].length > 1) {
     y[y.length - 2] += "%%";
     templ = "%%" + y.join("[");
+    _templateVarIdCache[varId] = templ;
   }
   return templ;
 };
@@ -8055,9 +8170,86 @@ Command = (function() {
     this['get'] = __bind(this['get'], this);
     this['varexp'] = __bind(this['varexp'], this);
     this['var'] = __bind(this['var'], this);
+    this._execute = __bind(this._execute, this);
     this.spawnableRoots = [];
+    this.boundWindowProps = [];
     this.engine = engine;
   }
+
+  Command.prototype.execute = function(commands) {
+    var command, _i, _len, _results;
+    _results = [];
+    for (_i = 0, _len = commands.length; _i < _len; _i++) {
+      command = commands[_i];
+      _results.push(this._execute(command, command));
+    }
+    return _results;
+  };
+
+  Command.prototype._execute = function(command, root) {
+    var func, i, node, sub, _i, _len, _ref;
+    node = command;
+    func = this[node[0]];
+    if (func == null) {
+      throw new Error("Engine Commands broke, couldn't find method: " + node[0]);
+    }
+    _ref = node.slice(1, +node.length + 1 || 9e9);
+    for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
+      sub = _ref[i];
+      if (sub instanceof Array) {
+        node.splice(i + 1, 1, this._execute(sub, root));
+      }
+    }
+    return func.call.apply(func, [this.engine, root].concat(__slice.call(node.slice(1, node.length))));
+  };
+
+  Command.prototype.teardown = function() {
+    if (!this._bound_to_window_resize) {
+      return window.removeEventListener("resize", this.spawnForWindowSize, false);
+    }
+  };
+
+  Command.prototype._bound_to_window_resize = false;
+
+  Command.prototype.spawnForWindowWidth = function() {
+    return this.engine.registerCommand(['suggest', ['get', "::window[width]"], ['number', window.outerWidth]]);
+  };
+
+  Command.prototype.spawnForWindowHeight = function() {
+    return this.engine.registerCommand(['suggest', ['get', "::window[height]"], ['number', window.outerHeight]]);
+  };
+
+  Command.prototype.spawnForWindowSize = function() {
+    if (this._bound_to_window_resize) {
+      if (this.boundWindowProps.indexOf('width') !== -1) {
+        this.spawnForWindowWidth();
+      }
+      if (this.boundWindowProps.indexOf('height') !== -1) {
+        return this.spawnForWindowHeight();
+      }
+    }
+  };
+
+  Command.prototype.bindToWindow = function(prop) {
+    if (this.boundWindowProps.indexOf(prop) === -1) {
+      this.boundWindowProps.push(prop);
+    }
+    if (prop === 'width' || prop === 'height') {
+      if (prop === 'width') {
+        this.spawnForWindowWidth();
+      } else {
+        this.spawnForWindowHeight();
+      }
+      if (!this._bound_to_window_resize) {
+        window.addEventListener("resize", this.spawnForWindowSize, false);
+        return this._bound_to_window_resize = true;
+      }
+    } else if (prop === 'x') {
+      return this.engine.registerCommand(['eq', ['get', '::window[x]'], ['number', 0], 'required']);
+    } else if (prop === 'y') {
+      return this.engine.registerCommand(['eq', ['get', '::window[y]'], ['number', 0], 'required']);
+    }
+  };
 
   Command.prototype.registerSpawn = function(root, varid, prop, intrinsicQuery, checkInstrinsics) {
     if (!root._is_bound) {
@@ -8074,6 +8266,11 @@ Command = (function() {
       this.spawnableRoots.push(root);
       return this.spawn(root);
     }
+  };
+
+  Command.prototype.handleRemoves = function(removes) {
+    this.engine.registerCommand(['remove'].concat(__slice.call(removes)));
+    return this;
   };
 
   Command.prototype.handleAddsToSelectors = function(selectorsWithAdds) {
@@ -8141,7 +8338,7 @@ Command = (function() {
         for (_k = 0, _len2 = _ref1.length; _k < _len2; _k++) {
           id = _ref1[_k];
           val = this.engine.measureByGssId(id, prop.split("intrinsic-")[1]);
-          _results.push(this.engine.registerCommand(getSuggestValueCommand(id, prop, val)));
+          _results.push(this.engine.registerCommand(getSuggestValueCommand(id, prop, val, root._intrinsicQuery.selector)));
         }
         return _results;
       }
@@ -8150,11 +8347,15 @@ Command = (function() {
 
   Command.prototype['var'] = function(self, varId, prop, query) {
     self.splice(2, 10);
-    self[1] = makeTemplateFromVarId(varId);
     if (self._is_bound) {
+      self[1] = makeTemplateFromVarId(varId);
       self.push("%%" + query.selector + "%%");
     }
-    return this.registerSpawn(self, varId, prop, query, true);
+    this.registerSpawn(self, varId, prop, query, true);
+    if (query === 'window') {
+      this.bindToWindow(prop);
+      return query = null;
+    }
   };
 
   Command.prototype['varexp'] = function(self, varId, expression, zzz) {
@@ -8163,9 +8364,13 @@ Command = (function() {
     return this.registerSpawn(self, varId);
   };
 
-  Command.prototype['get'] = function(root, varId) {
+  Command.prototype['get'] = function(root, varId, tracker) {
     checkCache(root, varId);
-    return ['get', makeTemplateFromVarId(varId)];
+    if (tracker && tracker !== "::window") {
+      return ['get', makeTemplateFromVarId(varId), tracker + "%%" + tracker + "%%"];
+    } else {
+      return ['get', makeTemplateFromVarId(varId)];
+    }
   };
 
   Command.prototype['number'] = function(root, num) {
@@ -8247,6 +8452,13 @@ Command = (function() {
   };
 
   Command.prototype['$reserved'] = function(root, sel) {
+    var query;
+    query = null;
+    if (sel === 'window') {
+      return 'window';
+    } else {
+      throw new Error("$reserved selectors not yet handled: " + sel);
+    }
     return query;
   };
 
@@ -8496,7 +8708,7 @@ GSS.processStyleTag = function(style, o) {
   }
   if (style.getAttribute("type") === 'text/gss') {
     if (!style._gss_processed) {
-      rules = style.innerHTML;
+      rules = style.innerHTML.trim();
       container = style.parentElement;
       if (container.tagName === "HEAD") {
         container = document;
