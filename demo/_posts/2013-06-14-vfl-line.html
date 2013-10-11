@@ -2,7 +2,11 @@
 layout: demo
 title: A Complete Line of Layout
 gss: |
-  @horizontal [#find]-[#findNext]-[#findField] chain-top;
+  @horizontal [#find]-[#findNext]-[#findField(>=200)] chain-height;
+  [hgap] == 20;
+  button[width] == button[intrinsic-width];
+  #find[height] == #find[intrinsic-height]; 
+  #find[x] >= #demo[intrinsic-x] + [hgap];
 intro: Sizing and spacing of a line of input elements.
 tags: vfl
 ---
