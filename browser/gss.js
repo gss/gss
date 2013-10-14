@@ -8720,19 +8720,21 @@ GSS.processStyleTag = function(style, o) {
   if (o == null) {
     o = {};
   }
-  if (style.getAttribute("type") === 'text/gss') {
-    if (!style._gss_processed) {
-      rules = style.innerHTML.trim();
-      container = style.parentElement;
-      if (container.tagName === "HEAD") {
-        container = document;
-      }
-      o.container = container;
-      o.rules = rules;
-      GSS(o);
-      return style._gss_processed = true;
-    }
+  if (style.getAttribute("type") !== 'text/gss') {
+    return;
   }
+  if (style._gss_processed) {
+    return;
+  }
+  rules = style.innerHTML.trim();
+  container = style.parentElement;
+  if (container.tagName === "HEAD") {
+    container = document;
+  }
+  o.container = container;
+  o.rules = rules;
+  GSS.engines.push(GSS(o));
+  return style._gss_processed = true;
 };
 
 styleTags = GSS.styleTags = null;
