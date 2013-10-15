@@ -35,6 +35,24 @@ If you're using Component for managing your project dependencies you can also in
 }
 ```
 
+## Usage via HTML
+
+The easiest way to run GSS is to include the JavaScript file into your pages, and then simply write some rules inside a `style` tag:
+
+```html
+<style type="text/gss">
+  /* Ensure nodes are square and of touchable size */
+  [node-width] == 58;
+  the-graph-process[width] == the-graph-process[height];
+  the-graph-process[width] == [node-width];
+
+  /* Center process label */
+  .the-graph-process-label[left] == [node-width]/2 - .the-graph-process-label[intrinsic-width]/2;
+</style>
+```
+
+The GSS runtime will find all these style tags and apply the constraints from them.
+
 ## Usage via JavaScript
 
 First load the GSS runtime CommonJS module:
