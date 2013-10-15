@@ -7647,7 +7647,7 @@ GSS.getById = function(id) {
   if (GSS._byIdCache[id]) {
     return GSS._byIdCache[id];
   }
-  el = document.querySelector('[data-gss-id="#{id}"]');
+  el = document.querySelector('[data-gss-id="' + id + '"]');
   return el;
 };
 
@@ -7674,7 +7674,7 @@ if (!window.GSS) {
 }
 
 });
-require.register("the-gss-engine/lib/Query.js", function(exports, require, module){
+require.register("the-gss-engine/lib/dom/Query.js", function(exports, require, module){
 var Query, arrayAddsRemoves;
 
 arrayAddsRemoves = function(old, neu) {
@@ -7761,18 +7761,18 @@ module.exports = Query;
 
 });
 require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
-var Command, Engine, Get, Query, Set, arrayAddsRemoves,
+var Command, Engine, Get, Query, Setter, arrayAddsRemoves,
   __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
 
 require("customevent-polyfill");
 
 require("./GSS-id.js");
 
-Query = require("./Query.js");
+Query = require("./dom/Query.js");
 
 Get = require("./dom/Getter.js");
 
-Set = require("./dom/Setter.js");
+Setter = require("./dom/Setter.js");
 
 Command = require("./Command.js");
 
@@ -7814,13 +7814,14 @@ Engine = (function() {
     this.resetCommandsForWorker = __bind(this.resetCommandsForWorker, this);
     this.measure = __bind(this.measure, this);
     this._handleMutations = __bind(this._handleMutations, this);
+    this.vars = {};
     if (!this.container) {
       this.container = document;
     }
     this.commander = new Command(this);
     this.worker = null;
     this.getter = new Get(this.container);
-    this.setter = new Set(this.container);
+    this.setter = new Setter(this.container);
     this.commandsForWorker = [];
     this.lastCommandsForWorker = null;
     this.queryCache = {};
@@ -7957,21 +7958,14 @@ Engine = (function() {
   };
 
   Engine.prototype.handleWorkerMessage = function(message) {
-    var dimension, element, gid, key, values;
+    var key, val, values;
     this.unobserve();
     values = message.data.values;
     for (key in values) {
-      if (key[0] === "$") {
-        gid = key.substring(1, key.indexOf("["));
-        dimension = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
-        element = GSS.getById(gid);
-        if (element) {
-          this.setter.set(element, dimension, values[key]);
-        } else {
-          console.log("Element wasn't found");
-        }
-      }
+      val = values[key];
+      this.vars[key] = val;
     }
+    this.setter.set(values);
     this.observe();
     return this.dispatch_solved(values);
   };
@@ -8177,6 +8171,7 @@ Command = (function() {
     this['gte'] = __bind(this['gte'], this);
     this['lte'] = __bind(this['lte'], this);
     this['eq'] = __bind(this['eq'], this);
+    this['suggest'] = __bind(this['suggest'], this);
     this['get'] = __bind(this['get'], this);
     this['varexp'] = __bind(this['varexp'], this);
     this['var'] = __bind(this['var'], this);
@@ -8403,6 +8398,12 @@ Command = (function() {
     return ['divide', e1, e2];
   };
 
+  Command.prototype['suggest'] = function() {
+    var args;
+    args = __slice.call(arguments);
+    return this.engine.registerCommand(['suggest'].concat(__slice.call(args.slice(1, args.length))));
+  };
+
   Command.prototype['eq'] = function(self, e1, e2, s, w) {
     return this.registerSpawn(self);
   };
@@ -8579,7 +8580,28 @@ Setter = (function() {
     }
   }
 
-  Setter.prototype.set = function(element, dimension, value) {
+  Setter.prototype.set = function(vars) {
+    var dimension, element, gid, key, val, _results;
+    _results = [];
+    for (key in vars) {
+      val = vars[key];
+      if (key[0] === "$") {
+        gid = key.substring(1, key.indexOf("["));
+        dimension = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
+        element = GSS.getById(gid);
+        if (element) {
+          _results.push(this.elementSet(element, dimension, val));
+        } else {
+          _results.push(console.log("Element wasn't found"));
+        }
+      } else {
+        _results.push(void 0);
+      }
+    }
+    return _results;
+  };
+
+  Setter.prototype.elementSet = function(element, dimension, value) {
     switch (dimension) {
       case 'width':
       case 'w':
@@ -8643,6 +8665,25 @@ Setter = (function() {
     offsets = this.getOffsets(element);
     return element.style.top = "" + (value - offsets.y) + "px";
   };
+
+  /*
+  setwithStyleTag: (vars) =>
+    if !@_has_setVars_styleTag
+      @_has_setVars_styleTag = true
+      @container.insertAdjacentHTML('afterbegin','<style data-gss-generated></style>')
+      @generatedStyle = @container.childNodes[0]
+    html = ""    
+    for key of vars
+      if key[0] is "$"
+        gid = key.substring(1, key.indexOf("["))
+        dimension = key.substring(key.indexOf("[")+1, key.indexOf("]"))
+        html += "[data-gss-id=\"#{gid}\"]{#{dimension}:#{vars[key]}px !important;}"
+    #@generatedStyle.textContent = html
+    @generatedStyle.innerHTML = html
+    #console.log @container.childNodes
+    #@container.insertAdjacentHTML 'afterbegin', html
+  */
+
 
   return Setter;
 
@@ -8716,7 +8757,7 @@ GSS.boot = function() {
 };
 
 GSS.processStyleTag = function(style, o) {
-  var container, rules;
+  var container, engine, rules;
   if (o == null) {
     o = {};
   }
@@ -8733,7 +8774,9 @@ GSS.processStyleTag = function(style, o) {
   }
   o.container = container;
   o.rules = rules;
-  GSS.engines.push(GSS(o));
+  engine = GSS(o);
+  engine.styleTag = style;
+  GSS.engines.push(engine);
   return style._gss_processed = true;
 };
 
@@ -8795,7 +8838,7 @@ require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-ccss-compil
 require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-vfl-compiler/index.js");
 require.alias("the-gss-compiler/lib/gss-compiler.js", "the-gss-compiler/index.js");
 require.alias("the-gss-engine/lib/GSS-id.js", "gss/deps/gss-engine/lib/GSS-id.js");
-require.alias("the-gss-engine/lib/Query.js", "gss/deps/gss-engine/lib/Query.js");
+require.alias("the-gss-engine/lib/dom/Query.js", "gss/deps/gss-engine/lib/dom/Query.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/lib/Engine.js");
 require.alias("the-gss-engine/lib/Command.js", "gss/deps/gss-engine/lib/Command.js");
 require.alias("the-gss-engine/lib/dom/Getter.js", "gss/deps/gss-engine/lib/dom/Getter.js");
