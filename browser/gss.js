@@ -252,6 +252,7 @@ module.exports = (function(){
         "comment": parse_comment,
         "_": parse__,
         "__": parse___,
+        "space": parse_space,
         "char": parse_char,
         "anychar": parse_anychar,
         "multitoend": parse_multitoend,
@@ -350,6 +351,9 @@ module.exports = (function(){
         }
         if (result0 === null) {
           pos = pos0;
+        }
+        if (result0 === null) {
+          result0 = parse__();
         }
         return result0;
       }
@@ -1061,26 +1065,10 @@ module.exports = (function(){
         var result0, result1;
         
         result0 = [];
-        if (input.charCodeAt(pos) === 32) {
-          result1 = " ";
-          pos++;
-        } else {
-          result1 = null;
-          if (reportFailures === 0) {
-            matchFailed("\" \"");
-          }
-        }
+        result1 = parse_space();
         while (result1 !== null) {
           result0.push(result1);
-          if (input.charCodeAt(pos) === 32) {
-            result1 = " ";
-            pos++;
-          } else {
-            result1 = null;
-            if (reportFailures === 0) {
-              matchFailed("\" \"");
-            }
-          }
+          result1 = parse_space();
         }
         return result0;
       }
@@ -1088,31 +1076,52 @@ module.exports = (function(){
       function parse___() {
         var result0, result1;
         
-        if (input.charCodeAt(pos) === 32) {
-          result1 = " ";
-          pos++;
-        } else {
-          result1 = null;
-          if (reportFailures === 0) {
-            matchFailed("\" \"");
-          }
-        }
+        result1 = parse_space();
         if (result1 !== null) {
           result0 = [];
           while (result1 !== null) {
             result0.push(result1);
-            if (input.charCodeAt(pos) === 32) {
-              result1 = " ";
-              pos++;
-            } else {
-              result1 = null;
-              if (reportFailures === 0) {
-                matchFailed("\" \"");
-              }
-            }
+            result1 = parse_space();
           }
         } else {
           result0 = null;
+        }
+        return result0;
+      }
+      
+      function parse_space() {
+        var result0;
+        
+        if (input.charCodeAt(pos) === 32) {
+          result0 = " ";
+          pos++;
+        } else {
+          result0 = null;
+          if (reportFailures === 0) {
+            matchFailed("\" \"");
+          }
+        }
+        if (result0 === null) {
+          if (/^[\t]/.test(input.charAt(pos))) {
+            result0 = input.charAt(pos);
+            pos++;
+          } else {
+            result0 = null;
+            if (reportFailures === 0) {
+              matchFailed("[\\t]");
+            }
+          }
+          if (result0 === null) {
+            if (/^[\xA0]/.test(input.charAt(pos))) {
+              result0 = input.charAt(pos);
+              pos++;
+            } else {
+              result0 = null;
+              if (reportFailures === 0) {
+                matchFailed("[\\xA0]");
+              }
+            }
+          }
         }
         return result0;
       }
@@ -1282,8 +1291,10 @@ module.exports = (function(){
       }
       
       function parse_LineTerminator() {
-        var result0;
+        var result0, result1;
+        var pos0;
         
+        pos0 = pos;
         if (/^[\n\r\u2028\u2029]/.test(input.charAt(pos))) {
           result0 = input.charAt(pos);
           pos++;
@@ -1292,6 +1303,29 @@ module.exports = (function(){
           if (reportFailures === 0) {
             matchFailed("[\\n\\r\\u2028\\u2029]");
           }
+        }
+        if (result0 === null) {
+          if (input.substr(pos, 2) === "\r\n") {
+            result0 = "\r\n";
+            pos += 2;
+          } else {
+            result0 = null;
+            if (reportFailures === 0) {
+              matchFailed("\"\\r\\n\"");
+            }
+          }
+        }
+        if (result0 !== null) {
+          result1 = parse__();
+          if (result1 !== null) {
+            result0 = [result0, result1];
+          } else {
+            result0 = null;
+            pos = pos0;
+          }
+        } else {
+          result0 = null;
+          pos = pos0;
         }
         if (result0 === null) {
           result0 = parse_comment();
@@ -8087,7 +8121,6 @@ Engine = (function() {
 
   Engine.prototype.clean = function() {
     var key, query, selector, val, _base, _base1, _ref, _ref1;
-    this.unobserve();
     this.commander.clean();
     if (typeof (_base = this.getter).clean === "function") {
       _base.clean();
@@ -8229,8 +8262,12 @@ Engine = (function() {
     invalidMeasures = [];
     for (_i = 0, _len = mutations.length; _i < _len; _i++) {
       m = mutations[_i];
-      if (m.type === "characterData" && this.getter.hasAST(m.target.parentElement)) {
-        return this.loadAndRun();
+      if (m.type === "characterData") {
+        if (this.getter.hasAST(m.target.parentElement)) {
+          return this.loadAndRun();
+        } else if (this.getter.hasAST(m.target.parentElement.parentElement)) {
+          return this.loadAndRun();
+        }
       }
       if (m.removedNodes.length > 0) {
         _ref = m.removedNodes;
@@ -9030,7 +9067,7 @@ Getter = (function() {
 
   Getter.prototype['readAST:text/gss-ast'] = function(node) {
     var ast, e, source;
-    source = node.innerHTML.trim();
+    source = node.textContent.trim();
     if (source.length === 0) {
       return {};
     }
@@ -9191,10 +9228,16 @@ require("gss-engine");
 GSS.worker = '../browser/the-gss-engine/worker/gss-solver.js';
 
 GSS.compile = function(rules) {
-  var ast;
+  var ast, e;
   ast = {};
   if (typeof rules === "string") {
-    ast = compiler.compile(rules);
+    try {
+      ast = compiler.compile(rules);
+    } catch (_error) {
+      e = _error;
+      console.warn("compiler error", e);
+      ast = {};
+    }
   } else if (typeof rules === "object") {
     ast = rules;
   } else {
@@ -9209,7 +9252,7 @@ GSS.Engine.prototype['compile'] = function(source) {
 
 GSS.Getter.prototype['readAST:text/gss'] = function(node) {
   var ast, source;
-  source = node.innerHTML.trim();
+  source = node.textContent.trim();
   if (source.length === 0) {
     return {};
   }

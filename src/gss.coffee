@@ -9,7 +9,11 @@ GSS.worker = '../browser/the-gss-engine/worker/gss-solver.js'
 GSS.compile = (rules) ->
   ast = {}
   if typeof rules is "string"
-    ast = compiler.compile(rules)
+    try
+      ast = compiler.compile(rules)
+    catch e
+      console.warn "compiler error", e
+      ast = {}
   # ruels are changed by reference!
   else if typeof rules is "object"
     ast = rules
@@ -19,13 +23,13 @@ GSS.compile = (rules) ->
 
 GSS.Engine::['compile'] = (source) ->
   @run GSS.compile source
-  
+
 GSS.Getter::['readAST:text/gss'] = (node) ->
-  source = node.innerHTML.trim()
+  source = node.textContent.trim()
   if source.length is 0 then return {}
-  #try 
+  #try
   ast = GSS.compile source
   #catch e
   #  console.error "Parsing compiled gss error", console.dir e
-  return ast 
+  return ast
 
