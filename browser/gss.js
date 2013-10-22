@@ -6474,13 +6474,13 @@ module.exports = (function(){
       function parse_NameChars() {
         var result0;
         
-        if (/^[a-zA-Z0-9#.\-_$]/.test(input.charAt(pos))) {
+        if (/^[a-zA-Z0-9#.\-_$:]/.test(input.charAt(pos))) {
           result0 = input.charAt(pos);
           pos++;
         } else {
           result0 = null;
           if (reportFailures === 0) {
-            matchFailed("[a-zA-Z0-9#.\\-_$]");
+            matchFailed("[a-zA-Z0-9#.\\-_$:]");
           }
         }
         return result0;
@@ -7620,7 +7620,8 @@ window.CustomEvent = CustomEvent;
 
 });
 require.register("the-gss-engine/lib/GSS.js", function(exports, require, module){
-var GSS, getter;
+var GSS, getTime, getter,
+  __slice = [].slice;
 
 require("customevent-polyfill");
 
@@ -7682,23 +7683,9 @@ GSS.loadAndRun = function(container) {
   return _results;
 };
 
-window.GSS = GSS;
-
-GSS.Getter = require("./dom/Getter.js");
-
-GSS.observer = require("./dom/Observer.js");
-
-GSS.Commander = require("./Commander.js");
-
-GSS.Query = require("./dom/Query.js");
-
-GSS.Setter = require("./dom/Setter.js");
-
-GSS.Engine = require("./Engine.js");
-
-GSS.getter = new GSS.Getter();
-
-getter = GSS.getter;
+GSS.config = {
+  resizeDebounce: 30
+};
 
 GSS.getEngine = function(el) {
   return GSS.engines.byId[this.getId(el)];
@@ -7749,6 +7736,65 @@ GSS.setupId = function(el) {
 GSS.getId = function(el) {
   return getter.getId(el);
 };
+
+GSS._ = {};
+
+getTime = Date.now || function() {
+  return new Date().getTime();
+};
+
+GSS._.debounce = function(func, wait, immediate) {
+  var args, context, result, timeout, timestamp;
+  timeout = void 0;
+  args = void 0;
+  context = void 0;
+  timestamp = void 0;
+  result = void 0;
+  return function() {
+    var callNow, later;
+    context = this;
+    args = __slice.call(arguments);
+    timestamp = getTime();
+    later = function() {
+      var last;
+      last = getTime() - timestamp;
+      if (last < wait) {
+        return timeout = setTimeout(later, wait - last);
+      } else {
+        timeout = null;
+        if (!immediate) {
+          return result = func.apply(context, args);
+        }
+      }
+    };
+    callNow = immediate && !timeout;
+    if (!timeout) {
+      timeout = setTimeout(later, wait);
+    }
+    if (callNow) {
+      result = func.apply(context, args);
+    }
+    return result;
+  };
+};
+
+window.GSS = GSS;
+
+GSS.Getter = require("./dom/Getter.js");
+
+GSS.observer = require("./dom/Observer.js");
+
+GSS.Commander = require("./Commander.js");
+
+GSS.Query = require("./dom/Query.js");
+
+GSS.Setter = require("./dom/Setter.js");
+
+GSS.Engine = require("./Engine.js");
+
+GSS.getter = new GSS.Getter();
+
+getter = GSS.getter;
 
 });
 require.register("the-gss-engine/lib/dom/Query.js", function(exports, require, module){
@@ -8444,8 +8490,10 @@ Commander = (function() {
     this['varexp'] = __bind(this['varexp'], this);
     this['var'] = __bind(this['var'], this);
     this.spawnIntrinsicSuggests = __bind(this.spawnIntrinsicSuggests, this);
+    this.spawnForWindowSize = __bind(this.spawnForWindowSize, this);
     this._execute = __bind(this._execute, this);
     this._checkCache = __bind(this._checkCache, this);
+    this.lazySpawnForWindowSize = GSS._.debounce(this.spawnForWindowSize, GSS.resizeDebounce, false);
     this.cleanVars();
   }
 
@@ -8511,7 +8559,7 @@ Commander = (function() {
 
   Commander.prototype.unlisten = function() {
     if (!this._bound_to_window_resize) {
-      window.removeEventListener("resize", this.spawnForWindowSize, false);
+      window.removeEventListener("resize", this.lazySpawnForWindowSize, false);
     }
     return this._bound_to_window_resize = false;
   };
@@ -8519,11 +8567,19 @@ Commander = (function() {
   Commander.prototype._bound_to_window_resize = false;
 
   Commander.prototype.spawnForWindowWidth = function() {
-    return this.engine.registerCommand(['suggest', ['get', "::window[width]"], ['number', window.outerWidth], 'required']);
+    var w;
+    w = window.innerWidth;
+    if (this.engine.vars["::window[width]"] !== w) {
+      return this.engine.registerCommand(['suggest', ['get', "::window[width]"], ['number', w], 'required']);
+    }
   };
 
   Commander.prototype.spawnForWindowHeight = function() {
-    return this.engine.registerCommand(['suggest', ['get', "::window[height]"], ['number', window.outerHeight], 'required']);
+    var h;
+    h = window.innerHeight;
+    if (this.engine.vars["::window[height]"] !== h) {
+      return this.engine.registerCommand(['suggest', ['get', "::window[height]"], ['number', h], 'required']);
+    }
   };
 
   Commander.prototype.spawnForWindowSize = function() {
@@ -8532,8 +8588,9 @@ Commander = (function() {
         this.spawnForWindowWidth();
       }
       if (this.boundWindowProps.indexOf('height') !== -1) {
-        return this.spawnForWindowHeight();
+        this.spawnForWindowHeight();
       }
+      return this.engine.solve();
     }
   };
 
@@ -8548,7 +8605,7 @@ Commander = (function() {
         this.spawnForWindowHeight();
       }
       if (!this._bound_to_window_resize) {
-        window.addEventListener("resize", this.spawnForWindowSize, false);
+        window.addEventListener("resize", this.lazySpawnForWindowSize, false);
         return this._bound_to_window_resize = true;
       }
     } else if (prop === 'x') {
