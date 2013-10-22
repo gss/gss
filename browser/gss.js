@@ -7619,14 +7619,90 @@ CustomEvent.prototype = window.Event.prototype;
 window.CustomEvent = CustomEvent;
 
 });
-require.register("the-gss-engine/lib/GSS-id.js", function(exports, require, module){
-var GSS;
+require.register("the-gss-engine/lib/GSS.js", function(exports, require, module){
+var GSS, getter;
+
+require("customevent-polyfill");
+
+if (!window.MutationObserver) {
+  window.MutationObserver = window.JsMutationObserver;
+}
 
 if (window.GSS) {
-  GSS = window.GSS;
-} else {
-  GSS = {};
+  throw new Error("Only one GSS object per window");
 }
+
+GSS = function(o) {
+  var engine;
+  if (o.tagName) {
+    engine = GSS.getEngine(o);
+    if (engine) {
+      return engine;
+    }
+    return new GSS.Engine({
+      container: o
+    });
+  } else if (o !== null && typeof o === 'object') {
+    if (o.container) {
+      engine = GSS.getEngine(o.container);
+      if (engine) {
+        engine.boot(o);
+        return engine;
+      }
+    }
+    return new Engine(o);
+  } else {
+    throw new Error("");
+  }
+};
+
+GSS.worker = '../browser/gss-engine/worker/gss-solver.js';
+
+GSS.loadAndRun = function(container) {
+  var containersToLoad, node, _i, _j, _len, _len1, _ref, _results;
+  if (container == null) {
+    container = document;
+  }
+  containersToLoad = [];
+  _ref = GSS.getter.getAllStyleNodes();
+  for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+    node = _ref[_i];
+    if (GSS.getter.hasAST(node)) {
+      container = GSS.getter.getEngineForStyleNode(node);
+      if (containersToLoad.indexOf(container) === -1) {
+        containersToLoad.push(container);
+      }
+    }
+  }
+  _results = [];
+  for (_j = 0, _len1 = containersToLoad.length; _j < _len1; _j++) {
+    container = containersToLoad[_j];
+    _results.push(GSS(container).loadAndRun());
+  }
+  return _results;
+};
+
+window.GSS = GSS;
+
+GSS.Getter = require("./dom/Getter.js");
+
+GSS.observer = require("./dom/Observer.js");
+
+GSS.Commander = require("./Commander.js");
+
+GSS.Query = require("./dom/Query.js");
+
+GSS.Setter = require("./dom/Setter.js");
+
+GSS.Engine = require("./Engine.js");
+
+GSS.getter = new GSS.Getter();
+
+getter = GSS.getter;
+
+GSS.getEngine = function(el) {
+  return GSS.engines.byId[this.getId(el)];
+};
 
 GSS._id_counter = 1;
 
@@ -7648,14 +7724,22 @@ GSS.getById = function(id) {
     return GSS._byIdCache[id];
   }
   el = document.querySelector('[data-gss-id="' + id + '"]');
+  if (el) {
+    GSS._byIdCache[id] = el;
+  }
   return el;
+};
+
+GSS.setupContainerId = function(el) {
+  el._gss_is_container = true;
+  return GSS.setupId(el);
 };
 
 GSS.setupId = function(el) {
   var gid;
-  gid = el.getAttribute('data-gss-id');
+  gid = getter.getId(el);
   if (gid == null) {
-    gid = GSS._id_counter++;
+    gid = String(GSS._id_counter++);
     el.setAttribute('data-gss-id', gid);
   }
   GSS._byIdCache[gid] = el;
@@ -7663,15 +7747,8 @@ GSS.setupId = function(el) {
 };
 
 GSS.getId = function(el) {
-  if (el.getAttribute) {
-    return el.getAttribute('data-gss-id');
-  }
-  return null;
+  return getter.getId(el);
 };
-
-if (!window.GSS) {
-  window.GSS = GSS;
-}
 
 });
 require.register("the-gss-engine/lib/dom/Query.js", function(exports, require, module){
@@ -7717,7 +7794,6 @@ Query = (function() {
     this.ids = o.ids || [];
     this.lastAddedIds = [];
     this.lastRemovedIds = [];
-    this.lastLocalRemovedIds = [];
     this.update();
     this;
   }
@@ -7728,6 +7804,9 @@ Query = (function() {
 
   Query.prototype.update = function() {
     var adds, el, id, newIds, oldIds, removes, _i, _len, _ref, _ref1;
+    if (this.is_destroyed) {
+      throw new Error("Can't update destroyed query: " + selector);
+    }
     this.changedLastUpdate = false;
     if (!this.isLive || !this._updated_once) {
       this.nodeList = this.createNodeList();
@@ -7738,7 +7817,9 @@ Query = (function() {
     for (_i = 0, _len = _ref.length; _i < _len; _i++) {
       el = _ref[_i];
       id = GSS.setupId(el);
-      newIds.push(id);
+      if (id) {
+        newIds.push(id);
+      }
     }
     _ref1 = arrayAddsRemoves(oldIds, newIds), adds = _ref1.adds, removes = _ref1.removes;
     if (adds.length > 0) {
@@ -7753,6 +7834,18 @@ Query = (function() {
     return this;
   };
 
+  Query.prototype.is_destroyed = false;
+
+  Query.prototype.destroy = function() {
+    this.is_destroyed = true;
+    this.ids = null;
+    this.lastAddedIds = null;
+    this.lastRemovedIds = null;
+    this.createNodeList = null;
+    this.nodeList = null;
+    return this.changedLastUpdate = null;
+  };
+
   return Query;
 
 })();
@@ -7760,109 +7853,373 @@ Query = (function() {
 module.exports = Query;
 
 });
-require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
-var Command, Engine, Get, Query, Setter, arrayAddsRemoves,
-  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
-
-require("customevent-polyfill");
-
-require("./GSS-id.js");
-
-Query = require("./dom/Query.js");
-
-Get = require("./dom/Getter.js");
-
-Setter = require("./dom/Setter.js");
-
-Command = require("./Command.js");
+require.register("the-gss-engine/lib/dom/Observer.js", function(exports, require, module){
+var observer;
 
 if (!window.MutationObserver) {
   window.MutationObserver = window.JsMutationObserver;
 }
 
-arrayAddsRemoves = function(old, neu, removesFromContainer) {
-  var adds, n, o, removes, _i, _j, _len, _len1;
-  adds = [];
-  removes = [];
-  for (_i = 0, _len = neu.length; _i < _len; _i++) {
-    n = neu[_i];
-    if (old.indexOf(n) === -1) {
-      adds.push(n);
-    }
-  }
-  for (_j = 0, _len1 = old.length; _j < _len1; _j++) {
-    o = old[_j];
-    if (neu.indexOf(o) === -1) {
-      if (removesFromContainer.indexOf(o) !== -1) {
-        removes.push(o);
+observer = new MutationObserver(function(mutations) {
+  var container, containersToLoad, m, node, _i, _j, _k, _len, _len1, _len2, _ref, _ref1, _results;
+  containersToLoad = [];
+  _results = [];
+  for (_i = 0, _len = mutations.length; _i < _len; _i++) {
+    m = mutations[_i];
+    if (m.removedNodes.length > 0) {
+      _ref = m.removedNodes;
+      for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
+        node = _ref[_j];
+        if (node._gss_is_container) {
+          GSS.getEngine(node).destroy();
+        }
+        if (GSS.getter.hasAST(node)) {
+          container = GSS.getter.getEngineForStyleNode(node);
+          if (containersToLoad.indexOf(container) === -1 && container) {
+            containersToLoad.push(container);
+          }
+        }
       }
     }
+    if (m.addedNodes.length > 0) {
+      _ref1 = m.addedNodes;
+      for (_k = 0, _len2 = _ref1.length; _k < _len2; _k++) {
+        node = _ref1[_k];
+        if (GSS.getter.hasAST(node)) {
+          container = GSS.getter.getEngineForStyleNode(node);
+          if (containersToLoad.indexOf(container) === -1) {
+            containersToLoad.push(container);
+          }
+        }
+      }
+    }
+    _results.push((function() {
+      var _l, _len3, _results1;
+      _results1 = [];
+      for (_l = 0, _len3 = containersToLoad.length; _l < _len3; _l++) {
+        container = containersToLoad[_l];
+        _results1.push(GSS(container).loadAndRun());
+      }
+      return _results1;
+    })());
   }
-  return {
-    adds: adds,
-    removes: removes
-  };
+  return _results;
+});
+
+document.addEventListener("DOMContentLoaded", function(e) {
+  observer.observe(document, {
+    subtree: true,
+    childList: true,
+    attributes: false,
+    characterData: false
+  });
+  return GSS.loadAndRun();
+});
+
+module.exports = observer;
+
+});
+require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
+var Engine, cleanAndSnatch, engines,
+  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+
+if (typeof GSS === "undefined" || GSS === null) {
+  throw new Error("GSS object needed for Engine");
+}
+
+cleanAndSnatch = function(frm, to) {
+  var key, val;
+  for (key in to) {
+    val = to[key];
+    if (frm[key] == null) {
+      delete to[key];
+    } else {
+      to[key] = frm[key];
+      delete frm[key];
+    }
+  }
+  for (key in frm) {
+    val = frm[key];
+    to[key] = frm[key];
+  }
+  frm = void 0;
+  return to;
 };
 
+GSS.engines = engines = [];
+
+engines.byId = {};
+
 Engine = (function() {
-  function Engine(workerPath, container) {
-    this.workerPath = workerPath;
-    this.container = container;
-    this.execute = __bind(this.execute, this);
-    this.dispatch_solved = __bind(this.dispatch_solved, this);
+  function Engine(o) {
+    this.dispatch = __bind(this.dispatch, this);
     this.handleWorkerMessage = __bind(this.handleWorkerMessage, this);
-    this.resetCommandsForWorker = __bind(this.resetCommandsForWorker, this);
-    this.measure = __bind(this.measure, this);
+    this.resetWorkerCommands = __bind(this.resetWorkerCommands, this);
     this._handleMutations = __bind(this._handleMutations, this);
-    this.vars = {};
+    this.execute = __bind(this.execute, this);
+    this.container = o.container, this.workerPath = o.workerPath, this.vars = o.vars, this.getter = o.getter, this.setter = o.setter;
+    if (!this.vars) {
+      this.vars = {};
+    }
     if (!this.container) {
       this.container = document;
     }
-    this.commander = new Command(this);
+    if (this.container.tagName === "HEAD") {
+      this.container = document;
+    }
+    if (!this.getter) {
+      this.getter = new GSS.Getter(this.container);
+    }
+    if (!this.setter) {
+      this.setter = new GSS.Setter(this.container);
+    }
+    if (!this.workerPath) {
+      this.workerPath = GSS.worker;
+    }
+    this.id = GSS.setupContainerId(this.container);
+    this.commander = new GSS.Commander(this);
     this.worker = null;
-    this.getter = new Get(this.container);
-    this.setter = new Setter(this.container);
-    this.commandsForWorker = [];
-    this.lastCommandsForWorker = null;
+    this.workerCommands = [];
+    this.workerMessageHistory = [];
+    this.lastWorkerCommands = null;
     this.queryCache = {};
     this.observer = new MutationObserver(this._handleMutations);
+    GSS.engines.push(this);
+    engines.byId[this.id] = this;
     this;
   }
 
-  Engine.prototype._is_observing = false;
+  Engine.prototype.is_running = false;
+
+  /*
+  run: (ast) ->
+    if ast.commands
+      @is_running = true
+      # digest
+      @execute ast.commands      
+      #debounced = () =>
+      @solve()
+      #setTimeout debounced, 1
+      @observe()
+    @
+  */
+
+
+  Engine.prototype.run = function(asts) {
+    var ast, _i, _len;
+    if (asts instanceof Array) {
+      for (_i = 0, _len = asts.length; _i < _len; _i++) {
+        ast = asts[_i];
+        this._run(ast);
+      }
+    } else {
+      this._run(asts);
+    }
+    if (this.workerCommands.length > 0) {
+      this.is_running = true;
+      return this.solve();
+    }
+  };
+
+  Engine.prototype._run = function(ast) {
+    if (ast.commands) {
+      return this.execute(ast.commands);
+    }
+  };
+
+  Engine.prototype.execute = function(commands) {
+    return this.commander.execute(commands);
+  };
+
+  Engine.prototype.loadAndRun = function() {
+    if (this.is_running) {
+      this.clean();
+    }
+    this.run(this.getter.readAllASTs());
+    return this;
+  };
+
+  Engine.prototype.clean = function() {
+    var key, query, selector, val, _base, _base1, _ref, _ref1;
+    this.unobserve();
+    this.commander.clean();
+    if (typeof (_base = this.getter).clean === "function") {
+      _base.clean();
+    }
+    if (typeof (_base1 = this.setter).clean === "function") {
+      _base1.clean();
+    }
+    this.workerCommands = [];
+    this.lastWorkerCommands = null;
+    _ref = this.vars;
+    for (key in _ref) {
+      val = _ref[key];
+      delete this.vars[key];
+    }
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    _ref1 = this.queryCache;
+    for (selector in _ref1) {
+      query = _ref1[selector];
+      query.destroy();
+      this.queryCache[selector] = null;
+    }
+    this.queryCache = {};
+    return this;
+  };
+
+  Engine.prototype.stopped = false;
+
+  Engine.prototype.stop = function() {
+    console.warn("Stop deprecated for destroyed");
+    this.destroy();
+    /*
+    if @stopped then return @
+    @stopped = true
+    @unobserve()
+    if @worker
+      @worker.terminate()
+      delete @worker
+    for selector, query of @queryCache
+      query.destroy()
+      @queryCache[selector] = null
+    @queryCache = {}
+    */
+
+    return this;
+  };
+
+  Engine.prototype.is_destroyed = false;
+
+  Engine.prototype.destroy = function() {
+    var i, query, selector, _base, _base1, _ref;
+    this.is_destroyed = true;
+    this.is_running = null;
+    this.commander.destroy();
+    if (typeof (_base = this.getter).destroy === "function") {
+      _base.destroy();
+    }
+    if (typeof (_base1 = this.setter).destroy === "function") {
+      _base1.destroy();
+    }
+    this.unobserve();
+    this.observer = null;
+    this.ast = null;
+    this.getter = null;
+    this.setter = null;
+    this.container = null;
+    this.commander = null;
+    this.workerCommands = null;
+    this.workerMessageHistory = null;
+    this.lastWorkerCommands = null;
+    this.vars = null;
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    _ref = this.queryCache;
+    for (selector in _ref) {
+      query = _ref[selector];
+      query.destroy();
+      this.queryCache[selector] = null;
+    }
+    this.queryCache = null;
+    i = engines.indexOf(this);
+    if (i > -1) {
+      engines.splice(i, 1);
+    }
+    delete engines.byId[this.id];
+    return this;
+  };
+
+  Engine.prototype.is_observing = false;
+
+  Engine.prototype.observe = function() {
+    if (!this.is_observing) {
+      this.observer.observe(this.container, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true
+      });
+      this.is_observing = true;
+    }
+    return this;
+  };
+
+  Engine.prototype.unobserve = function() {
+    this.is_observing = false;
+    this.observer.disconnect();
+    return this;
+  };
+
+  Engine.prototype.solve = function() {
+    var workerMessage;
+    workerMessage = {
+      commands: this.workerCommands
+    };
+    this.workerMessageHistory.push(workerMessage);
+    if (!this.worker) {
+      this.worker = new Worker(this.workerPath);
+      this.worker.addEventListener("message", this.handleWorkerMessage, false);
+      this.worker.addEventListener("error", this.handleError, false);
+    }
+    this.worker.postMessage(workerMessage);
+    return this.resetWorkerCommands();
+  };
 
   Engine.prototype._handleMutations = function(mutations) {
-    var addsBySelector, gid, m, node, query, removedIds, removes, removesFromContainer, rid, selector, selectorsWithAdds, trigger, trigger_addsToSelectors, trigger_removes, trigger_removesFromContainer, _i, _j, _k, _len, _len1, _len2, _ref, _ref1;
+    var gid, invalidMeasures, m, node, query, removedIds, removes, rid, selector, selectorsWithAdds, target, trigger, trigger_containerRemoved, trigger_removes, trigger_removesFromContainer, _i, _j, _k, _len, _len1, _len2, _ref, _ref1;
     if (mutations == null) {
       mutations = [];
     }
     trigger = false;
+    trigger_containerRemoved = false;
     trigger_removes = false;
     trigger_removesFromContainer = false;
-    trigger_addsToSelectors = false;
     removes = [];
-    removesFromContainer = [];
+    invalidMeasures = [];
     for (_i = 0, _len = mutations.length; _i < _len; _i++) {
       m = mutations[_i];
+      if (m.type === "characterData" && this.getter.hasAST(m.target.parentElement)) {
+        return this.loadAndRun();
+      }
       if (m.removedNodes.length > 0) {
         _ref = m.removedNodes;
         for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
           node = _ref[_j];
+          if (node === this.container) {
+            console.log("handle engine container removed");
+          }
           gid = GSS.getId(node);
           if (gid != null) {
             if (GSS.getById(gid)) {
               removes.push("$" + gid);
               trigger = true;
               trigger_removesFromContainer = true;
-              trigger_removes = true;
             }
+          }
+        }
+      }
+      if (m.type === "characterData" || m.type === "attributes" || m.type === "childList") {
+        if (m.type === "characterData") {
+          target = m.target.parentElement;
+          gid = "$" + GSS.getId(m.target.parentElement);
+        } else {
+          gid = "$" + GSS.getId(m.target);
+        }
+        if (gid != null) {
+          if (invalidMeasures.indexOf(gid) === -1) {
+            trigger = true;
+            invalidMeasures.push(gid);
           }
         }
       }
     }
     GSS._ids_killed(removes);
     selectorsWithAdds = [];
-    addsBySelector = {};
     _ref1 = this.queryCache;
     for (selector in _ref1) {
       query = _ref1[selector];
@@ -7870,13 +8227,10 @@ Engine = (function() {
       if (query.changedLastUpdate) {
         if (query.lastAddedIds.length > 0) {
           selectorsWithAdds.push(selector);
-          addsBySelector[selector] = query.lastAddedIds;
           trigger = true;
-          trigger_addsToSelectors = true;
         }
         if (query.lastRemovedIds.length > 0) {
           trigger = true;
-          trigger_removes = true;
           removedIds = query.lastRemovedIds;
           for (_k = 0, _len2 = removedIds.length; _k < _len2; _k++) {
             rid = removedIds[_k];
@@ -7906,80 +8260,53 @@ Engine = (function() {
       @container.dispatchEvent e
     */
 
-    if (trigger_removes) {
-      this.commander.handleRemoves(removes);
-    }
-    if (trigger_addsToSelectors) {
-      this.commander.handleAddsToSelectors(selectorsWithAdds);
-    }
+    this.commander.handleRemoves(removes);
+    this.commander.handleSelectorsWithAdds(selectorsWithAdds);
+    this.commander.handleInvalidMeasures(invalidMeasures);
     if (trigger) {
       return this.solve();
     }
   };
 
-  Engine.prototype.observe = function() {
-    if (!this._is_observing) {
-      this.observer.observe(this.container, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        characterData: false
-      });
-      return this._is_observing = true;
-    }
-  };
-
-  Engine.prototype.unobserve = function() {
-    this._is_observing = false;
-    return this.observer.disconnect();
-  };
-
-  Engine.prototype.run = function(ast) {
-    this.execute(ast.commands);
-    this.solve();
-    return this.observe();
-  };
-
-  Engine.prototype.teardown = function() {};
-
-  Engine.prototype.measure = function(el, prop) {
-    return this.getter.measure(el, prop);
-  };
-
   Engine.prototype.measureByGssId = function(id, prop) {
     var el;
     el = GSS.getById(id);
-    return this.measure(el, prop);
+    return this.getter.measure(el, prop);
   };
 
-  Engine.prototype.resetCommandsForWorker = function() {
-    this.lastCommandsForWorker = this.commandsForWorker;
-    return this.commandsForWorker = [];
+  Engine.prototype.resetWorkerCommands = function() {
+    this.lastWorkerCommands = this.workerCommands;
+    return this.workerCommands = [];
   };
 
   Engine.prototype.handleWorkerMessage = function(message) {
-    var key, val, values;
     this.unobserve();
-    values = message.data.values;
-    for (key in values) {
-      val = values[key];
-      this.vars[key] = val;
-    }
-    this.setter.set(values);
+    cleanAndSnatch(message.data.values, this.vars);
+    this.setter.set(this.vars);
     this.observe();
-    return this.dispatch_solved(values);
+    return this.dispatch("solved", {
+      values: this.vars
+    });
   };
 
-  Engine.prototype.dispatch_solved = function(values) {
-    var e;
-    e = new CustomEvent("solved", {
-      detail: {
-        values: values,
-        engine: this
-      },
-      bubbles: true,
-      cancelable: true
-    });
+  Engine.prototype.dispatch = function(eName, oDetail, bubbles, cancelable) {
+    var e, o;
+    if (oDetail == null) {
+      oDetail = {};
+    }
+    if (bubbles == null) {
+      bubbles = true;
+    }
+    if (cancelable == null) {
+      cancelable = true;
+    }
+    oDetail.engine = this;
+    o = {
+      detail: oDetail,
+      bubbles: bubbles,
+      cancelable: cancelable
+    };
+    e = new CustomEvent(eName, o);
     return this.container.dispatchEvent(e);
   };
 
@@ -7990,49 +8317,8 @@ Engine = (function() {
     throw new Error("" + event.message + " (" + event.filename + ":" + event.lineno + ")");
   };
 
-  Engine.prototype.solve = function() {
-    var ast;
-    ast = {
-      commands: this.commandsForWorker
-    };
-    if (!this.worker) {
-      this.worker = new Worker(this.workerPath);
-      this.worker.addEventListener("message", this.handleWorkerMessage, false);
-      this.worker.addEventListener("error", this.handleError, false);
-    }
-    this.worker.postMessage({
-      ast: ast
-    });
-    return this.resetCommandsForWorker();
-  };
-
-  Engine.prototype.stopped = false;
-
-  Engine.prototype.stop = function() {
-    var query, selector, _ref;
-    if (this.stopped) {
-      return this;
-    }
-    this.unobserve();
-    if (this.worker) {
-      this.worker.terminate();
-    }
-    _ref = this.queryCache;
-    for (selector in _ref) {
-      query = _ref[selector];
-      delete query.nodeList;
-      delete query.ids;
-      delete this.query;
-    }
-    return this.stopped = true;
-  };
-
-  Engine.prototype.execute = function(commands) {
-    return this.commander.execute(commands);
-  };
-
   Engine.prototype._addVarCommandsForElements = function(elements) {
-    return this.commandsForWorker.push("var", el.id + prop);
+    return this.workerCommands.push("var", el.id + prop);
   };
 
   Engine.prototype.registerCommands = function(commands) {
@@ -8046,7 +8332,7 @@ Engine = (function() {
   };
 
   Engine.prototype.registerCommand = function(command) {
-    return this.commandsForWorker.push(command);
+    return this.workerCommands.push(command);
   };
 
   Engine.prototype.registerDomQuery = function(o) {
@@ -8055,7 +8341,8 @@ Engine = (function() {
     if (this.queryCache[selector] != null) {
       return this.queryCache[selector];
     } else {
-      query = new Query(o);
+      this.observe();
+      query = new GSS.Query(o);
       this.queryCache[selector] = query;
       return query;
     }
@@ -8065,34 +8352,34 @@ Engine = (function() {
 
 })();
 
+/*
+Engine::loadAllASTs = () ->
+  @ASTs = @getter.readAllASTs()
+
+Engine::addAST = (ast) ->
+  @ASTs.push ast
+  @run ast  
+
+Engine::removeAST = (ast) ->  
+  @clean()
+  @ASTs.splice @ASTs.indexOf(ast), 1
+  @run @ASTs
+*/
+
+
 module.exports = Engine;
 
 });
-require.register("the-gss-engine/lib/Command.js", function(exports, require, module){
+require.register("the-gss-engine/lib/Commander.js", function(exports, require, module){
 /*
 
 Root commands, if bound to a dom query, will spawn commands
 to match live results of query.
 */
 
-var Command, bindCache, bindRoot, checkCache, checkIntrinsics, getSuggestValueCommand, makeTemplateFromVarId, _templateVarIdCache,
+var Commander, bindRoot, makeTemplateFromVarId, _templateVarIdCache,
   __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
   __slice = [].slice;
-
-bindCache = {};
-
-checkCache = function(root, cacheKey) {
-  var bind, binds, _i, _len, _results;
-  binds = bindCache[cacheKey];
-  if (binds != null) {
-    _results = [];
-    for (_i = 0, _len = binds.length; _i < _len; _i++) {
-      bind = binds[_i];
-      _results.push(bindRoot(root, bind));
-    }
-    return _results;
-  }
-};
 
 bindRoot = function(root, query) {
   root._is_bound = true;
@@ -8108,26 +8395,6 @@ bindRoot = function(root, query) {
         throw new Error("Multi el queries only allowed once per statement");
       }
       return root._binds.multi = query;
-    }
-  }
-};
-
-getSuggestValueCommand = function(gssId, prop, val, selector) {
-  return ['suggest', ['get', "$" + gssId + "[" + prop + "]", "" + selector + "$" + gssId], ['number', val]];
-};
-
-checkIntrinsics = function(root, engine, varId, prop, query) {
-  var id, val, _i, _len, _ref, _results;
-  if (query != null) {
-    if (prop.indexOf("intrinsic-") === 0) {
-      _ref = query.lastAddedIds;
-      _results = [];
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        id = _ref[_i];
-        val = engine.measureByGssId(id, prop.split("intrinsic-")[1]);
-        _results.push(engine.registerCommand(getSuggestValueCommand(id, prop, val, query.selector)));
-      }
-      return _results;
     }
   }
 };
@@ -8158,8 +8425,9 @@ makeTemplateFromVarId = function(varId) {
   return templ;
 };
 
-Command = (function() {
-  function Command(engine) {
+Commander = (function() {
+  function Commander(engine) {
+    this.engine = engine;
     this['$id'] = __bind(this['$id'], this);
     this['$reserved'] = __bind(this['$reserved'], this);
     this['$tag'] = __bind(this['$tag'], this);
@@ -8175,13 +8443,46 @@ Command = (function() {
     this['get'] = __bind(this['get'], this);
     this['varexp'] = __bind(this['varexp'], this);
     this['var'] = __bind(this['var'], this);
+    this.spawnIntrinsicSuggests = __bind(this.spawnIntrinsicSuggests, this);
     this._execute = __bind(this._execute, this);
-    this.spawnableRoots = [];
-    this.boundWindowProps = [];
-    this.engine = engine;
+    this._checkCache = __bind(this._checkCache, this);
+    this.cleanVars();
   }
 
-  Command.prototype.execute = function(commands) {
+  Commander.prototype.clean = function() {
+    this.cleanVars();
+    return this.unlisten();
+  };
+
+  Commander.prototype.cleanVars = function() {
+    this.spawnableRoots = [];
+    this.intrinsicRegistersById = {};
+    this.boundWindowProps = [];
+    return this.bindCache = {};
+  };
+
+  Commander.prototype.destroy = function() {
+    this.spawnableRoots = null;
+    this.intrinsicRegistersById = null;
+    this.boundWindowProps = null;
+    this.bindCache = null;
+    return this.unlisten();
+  };
+
+  Commander.prototype._checkCache = function(root, cacheKey) {
+    var bind, binds, _i, _len, _results;
+    binds = this.bindCache[cacheKey];
+    if (binds != null) {
+      _results = [];
+      for (_i = 0, _len = binds.length; _i < _len; _i++) {
+        bind = binds[_i];
+        _results.push(bindRoot(root, bind));
+      }
+      return _results;
+    }
+  };
+
+  Commander.prototype.execute = function(commands) {
     var command, _i, _len, _results;
     _results = [];
     for (_i = 0, _len = commands.length; _i < _len; _i++) {
@@ -8191,7 +8492,7 @@ Command = (function() {
     return _results;
   };
 
-  Command.prototype._execute = function(command, root) {
+  Commander.prototype._execute = function(command, root) {
     var func, i, node, sub, _i, _len, _ref;
     node = command;
     func = this[node[0]];
@@ -8208,23 +8509,24 @@ Command = (function() {
     return func.call.apply(func, [this.engine, root].concat(__slice.call(node.slice(1, node.length))));
   };
 
-  Command.prototype.teardown = function() {
+  Commander.prototype.unlisten = function() {
     if (!this._bound_to_window_resize) {
-      return window.removeEventListener("resize", this.spawnForWindowSize, false);
+      window.removeEventListener("resize", this.spawnForWindowSize, false);
     }
+    return this._bound_to_window_resize = false;
   };
 
-  Command.prototype._bound_to_window_resize = false;
+  Commander.prototype._bound_to_window_resize = false;
 
-  Command.prototype.spawnForWindowWidth = function() {
-    return this.engine.registerCommand(['suggest', ['get', "::window[width]"], ['number', window.outerWidth]]);
+  Commander.prototype.spawnForWindowWidth = function() {
+    return this.engine.registerCommand(['suggest', ['get', "::window[width]"], ['number', window.outerWidth], 'required']);
   };
 
-  Command.prototype.spawnForWindowHeight = function() {
-    return this.engine.registerCommand(['suggest', ['get', "::window[height]"], ['number', window.outerHeight]]);
+  Commander.prototype.spawnForWindowHeight = function() {
+    return this.engine.registerCommand(['suggest', ['get', "::window[height]"], ['number', window.outerHeight], 'required']);
   };
 
-  Command.prototype.spawnForWindowSize = function() {
+  Commander.prototype.spawnForWindowSize = function() {
     if (this._bound_to_window_resize) {
       if (this.boundWindowProps.indexOf('width') !== -1) {
         this.spawnForWindowWidth();
@@ -8235,7 +8537,7 @@ Command = (function() {
     }
   };
 
-  Command.prototype.bindToWindow = function(prop) {
+  Commander.prototype.bindToWindow = function(prop) {
     if (this.boundWindowProps.indexOf(prop) === -1) {
       this.boundWindowProps.push(prop);
     }
@@ -8256,30 +8558,43 @@ Command = (function() {
     }
   };
 
-  Command.prototype.registerSpawn = function(root, varid, prop, intrinsicQuery, checkInstrinsics) {
+  Commander.prototype.registerSpawn = function(root, varid, prop, intrinsicQuery, checkInstrinsics) {
     if (!root._is_bound) {
       return this.engine.registerCommand(root);
     } else {
       if (varid) {
-        bindCache[varid] = root._binds;
+        this.bindCache[varid] = root._binds;
       }
       root._template = JSON.stringify(root);
       root._varid = varid;
       root._prop = prop;
-      root._checkInstrinsics = checkInstrinsics;
-      root._intrinsicQuery = intrinsicQuery;
+      if (checkInstrinsics) {
+        root._checkInstrinsics = checkInstrinsics;
+        root._intrinsicQuery = intrinsicQuery;
+      }
       this.spawnableRoots.push(root);
       return this.spawn(root);
     }
   };
 
-  Command.prototype.handleRemoves = function(removes) {
+  Commander.prototype.handleRemoves = function(removes) {
+    var varid, _i, _len;
+    if (removes.length < 1) {
+      return this;
+    }
     this.engine.registerCommand(['remove'].concat(__slice.call(removes)));
+    for (_i = 0, _len = removes.length; _i < _len; _i++) {
+      varid = removes[_i];
+      delete this.intrinsicRegistersById[varid];
+    }
     return this;
   };
 
-  Command.prototype.handleAddsToSelectors = function(selectorsWithAdds) {
+  Commander.prototype.handleSelectorsWithAdds = function(selectorsWithAdds) {
     var boundSelector, root, _i, _j, _len, _len1, _ref, _ref1;
+    if (selectorsWithAdds.length < 1) {
+      return this;
+    }
     _ref = this.spawnableRoots;
     for (_i = 0, _len = _ref.length; _i < _len; _i++) {
       root = _ref[_i];
@@ -8295,8 +8610,53 @@ Command = (function() {
     return this;
   };
 
-  Command.prototype.spawn = function(root) {
-    var command, id, joiner, prop, q, queries, ready, replaces, rootString, splitter, template, val, _i, _j, _k, _len, _len1, _len2, _ref, _ref1, _results;
+  Commander.prototype.handleInvalidMeasures = function(invalidMeasures) {
+    var id, prop, register, registersByProp, _i, _len;
+    if (invalidMeasures.length < 1) {
+      return this;
+    }
+    for (_i = 0, _len = invalidMeasures.length; _i < _len; _i++) {
+      id = invalidMeasures[_i];
+      registersByProp = this.intrinsicRegistersById[id];
+      if (registersByProp) {
+        for (prop in registersByProp) {
+          register = registersByProp[prop];
+          register.call(this);
+        }
+      }
+    }
+    return this;
+  };
+
+  Commander.prototype.spawnIntrinsicSuggests = function(root) {
+    var prop,
+      _this = this;
+    if (root._checkInstrinsics && (root._intrinsicQuery != null)) {
+      prop = root._prop;
+      if (prop.indexOf("intrinsic-") === 0) {
+        root._intrinsicQuery.lastAddedIds.forEach(function(id) {
+          var gid, register;
+          gid = "$" + id;
+          if (!_this.intrinsicRegistersById[gid]) {
+            _this.intrinsicRegistersById[gid] = {};
+          }
+          if (!_this.intrinsicRegistersById[gid][prop]) {
+            register = function() {
+              var val;
+              val = this.engine.measureByGssId(id, prop.split("intrinsic-")[1]);
+              return this.engine.registerCommand(['suggest', ['get', "" + gid + "[" + prop + "]"], ['number', val], 'required']);
+            };
+            _this.intrinsicRegistersById[gid][prop] = register;
+            return register.call(_this);
+          }
+        });
+      }
+    }
+    return this;
+  };
+
+  Commander.prototype.spawn = function(root) {
+    var command, id, joiner, q, queries, ready, replaces, rootString, splitter, template, _i, _j, _len, _len1, _ref;
     queries = root._binds;
     rootString = root._template;
     replaces = {};
@@ -8335,22 +8695,10 @@ Command = (function() {
         this.engine.registerCommand(eval(command));
       }
     }
-    if (root._checkInstrinsics && (root._intrinsicQuery != null)) {
-      prop = root._prop;
-      if (prop.indexOf("intrinsic-") === 0) {
-        _ref1 = root._intrinsicQuery.lastAddedIds;
-        _results = [];
-        for (_k = 0, _len2 = _ref1.length; _k < _len2; _k++) {
-          id = _ref1[_k];
-          val = this.engine.measureByGssId(id, prop.split("intrinsic-")[1]);
-          _results.push(this.engine.registerCommand(getSuggestValueCommand(id, prop, val, root._intrinsicQuery.selector)));
-        }
-        return _results;
-      }
-    }
+    return this.spawnIntrinsicSuggests(root);
   };
 
-  Command.prototype['var'] = function(self, varId, prop, query) {
+  Commander.prototype['var'] = function(self, varId, prop, query) {
     self.splice(2, 10);
     if (self._is_bound) {
       self[1] = makeTemplateFromVarId(varId);
@@ -8363,76 +8711,78 @@ Command = (function() {
     }
   };
 
-  Command.prototype['varexp'] = function(self, varId, expression, zzz) {
+  Commander.prototype['varexp'] = function(self, varId, expression, zzz) {
     self.splice(3, 10);
     self[1] = makeTemplateFromVarId(varId);
     return this.registerSpawn(self, varId);
   };
 
-  Command.prototype['get'] = function(root, varId, tracker) {
-    checkCache(root, varId);
-    if (tracker && tracker !== "::window") {
+  Commander.prototype['get'] = function(root, varId, tracker) {
+    this._checkCache(root, varId);
+    if (tracker && (tracker !== "::window")) {
       return ['get', makeTemplateFromVarId(varId), tracker + "%%" + tracker + "%%"];
-    } else {
+    } else if (root._is_bound) {
       return ['get', makeTemplateFromVarId(varId)];
+    } else {
+      return ['get', varId];
     }
   };
 
-  Command.prototype['number'] = function(root, num) {
+  Commander.prototype['number'] = function(root, num) {
     return ['number', num];
   };
 
-  Command.prototype['plus'] = function(root, e1, e2) {
+  Commander.prototype['plus'] = function(root, e1, e2) {
     return ['plus', e1, e2];
   };
 
-  Command.prototype['minus'] = function(root, e1, e2) {
+  Commander.prototype['minus'] = function(root, e1, e2) {
     return ['minus', e1, e2];
   };
 
-  Command.prototype['multiply'] = function(root, e1, e2) {
+  Commander.prototype['multiply'] = function(root, e1, e2) {
     return ['multiply', e1, e2];
   };
 
-  Command.prototype['divide'] = function(root, e1, e2, s, w) {
+  Commander.prototype['divide'] = function(root, e1, e2, s, w) {
     return ['divide', e1, e2];
   };
 
-  Command.prototype['suggest'] = function() {
+  Commander.prototype['suggest'] = function() {
     var args;
     args = __slice.call(arguments);
     return this.engine.registerCommand(['suggest'].concat(__slice.call(args.slice(1, args.length))));
   };
 
-  Command.prototype['eq'] = function(self, e1, e2, s, w) {
+  Commander.prototype['eq'] = function(self, e1, e2, s, w) {
     return this.registerSpawn(self);
   };
 
-  Command.prototype['lte'] = function(self, e1, e2, s, w) {
+  Commander.prototype['lte'] = function(self, e1, e2, s, w) {
     return this.registerSpawn(self);
   };
 
-  Command.prototype['gte'] = function(self, e1, e2, s, w) {
+  Commander.prototype['gte'] = function(self, e1, e2, s, w) {
     return this.registerSpawn(self);
   };
 
-  Command.prototype['lt'] = function(self, e1, e2, s, w) {
+  Commander.prototype['lt'] = function(self, e1, e2, s, w) {
     return this.registerSpawn(self);
   };
 
-  Command.prototype['gt'] = function(self, e1, e2, s, w) {
+  Commander.prototype['gt'] = function(self, e1, e2, s, w) {
     return this.registerSpawn(self);
   };
 
-  Command.prototype['stay'] = function(self) {
+  Commander.prototype['stay'] = function(self) {
     return this.registerSpawn(self);
   };
 
-  Command.prototype['strength'] = function(root, s) {
+  Commander.prototype['strength'] = function(root, s) {
     return ['strength', s];
   };
 
-  Command.prototype['$class'] = function(root, sel) {
+  Commander.prototype['$class'] = function(root, sel) {
     var query,
       _this = this;
     query = this.engine.registerDomQuery({
@@ -8447,7 +8797,7 @@ Command = (function() {
     return query;
   };
 
-  Command.prototype['$tag'] = function(root, sel) {
+  Commander.prototype['$tag'] = function(root, sel) {
     var query,
       _this = this;
     query = this.engine.registerDomQuery({
@@ -8462,7 +8812,7 @@ Command = (function() {
     return query;
   };
 
-  Command.prototype['$reserved'] = function(root, sel) {
+  Commander.prototype['$reserved'] = function(root, sel) {
     var query;
     query = null;
     if (sel === 'window') {
@@ -8473,7 +8823,7 @@ Command = (function() {
     return query;
   };
 
-  Command.prototype['$id'] = function(root, sel) {
+  Commander.prototype['$id'] = function(root, sel) {
     var query,
       _this = this;
     query = this.engine.registerDomQuery({
@@ -8490,11 +8840,11 @@ Command = (function() {
     return query;
   };
 
-  return Command;
+  return Commander;
 
 })();
 
-module.exports = Command;
+module.exports = Commander;
 
 });
 require.register("the-gss-engine/lib/dom/Getter.js", function(exports, require, module){
@@ -8503,10 +8853,18 @@ var Getter;
 Getter = (function() {
   function Getter(container) {
     this.container = container;
+    this.styleNodes = null;
     if (!this.container) {
       this.container = document;
     }
   }
+
+  Getter.prototype.clean = function() {};
+
+  Getter.prototype.destroy = function() {
+    this.container = null;
+    return this.styleNodes = null;
+  };
 
   Getter.prototype.get = function(selector) {
     var identifier, method;
@@ -8515,7 +8873,7 @@ Getter = (function() {
     switch (method) {
       case "$reserved":
         if (identifier === 'this') {
-          return container;
+          return this.container;
         }
         break;
       case "$id":
@@ -8534,32 +8892,102 @@ Getter = (function() {
     return this.container.querySelectorAll(identifier);
   };
 
-  Getter.prototype.measure = function(element, dimension) {
+  Getter.prototype.getId = function(el) {
+    if ((el != null ? el.getAttribute : void 0) != null) {
+      return el.getAttribute('data-gss-id');
+    }
+    return null;
+  };
+
+  Getter.prototype.measure = function(node, dimension) {
     var scroll;
     switch (dimension) {
       case 'width':
       case 'w':
-        return element.getBoundingClientRect().width;
+        return node.getBoundingClientRect().width;
       case 'height':
       case 'h':
-        return element.getBoundingClientRect().height;
+        return node.getBoundingClientRect().height;
       case 'left':
       case 'x':
         scroll = window.scrollX || window.scrollLeft || 0;
-        return element.getBoundingClientRect().left + scroll;
+        return node.getBoundingClientRect().left + scroll;
       case 'top':
       case 'y':
         scroll = window.scrollY || window.scrollTop || 0;
-        return element.getBoundingClientRect().top + scroll;
+        return node.getBoundingClientRect().top + scroll;
       case 'bottom':
-        return this.measure(element, 'top') + this.measure(element, 'height');
+        return this.measure(node, 'top') + this.measure(node, 'height');
       case 'right':
-        return this.measure(element, 'left') + this.measure(element, 'width');
+        return this.measure(node, 'left') + this.measure(node, 'width');
       case 'centerX':
-        return this.measure(element, 'left') + this.measure(element, 'width') / 2;
+        return this.measure(node, 'left') + this.measure(node, 'width') / 2;
       case 'centerY':
-        return this.measure(element, 'top') + this.measure(element, 'height') / 2;
+        return this.measure(node, 'top') + this.measure(node, 'height') / 2;
     }
+  };
+
+  Getter.prototype.getAllStyleNodes = function() {
+    if (!this.styleNodes) {
+      this.styleNodes = this.container.getElementsByTagName("style");
+    }
+    return this.styleNodes;
+  };
+
+  Getter.prototype.readAllASTs = function() {
+    var AST, ASTs, node, _i, _len, _ref;
+    ASTs = [];
+    _ref = this.getAllStyleNodes();
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      node = _ref[_i];
+      AST = this.readAST(node);
+      if (AST) {
+        ASTs.push(AST);
+      }
+    }
+    return ASTs;
+  };
+
+  Getter.prototype.hasAST = function(node) {
+    var mime;
+    mime = typeof node.getAttribute === "function" ? node.getAttribute("type") : void 0;
+    if (mime) {
+      return mime.indexOf("text/gss") === 0;
+    }
+    return false;
+  };
+
+  Getter.prototype.getEngineForStyleNode = function(node) {
+    return node.parentElement;
+  };
+
+  Getter.prototype.readAST = function(node) {
+    var mime, reader;
+    mime = node.getAttribute("type");
+    reader = this["readAST:" + mime];
+    if (reader) {
+      return reader.call(this, node);
+    }
+    return null;
+  };
+
+  Getter.prototype['readAST:text/gss-ast'] = function(node) {
+    var ast, e, source;
+    source = node.innerHTML.trim();
+    if (source.length === 0) {
+      return {};
+    }
+    try {
+      ast = JSON.parse(source);
+    } catch (_error) {
+      e = _error;
+      console.error("Parsing compiled gss error", console.dir(e));
+    }
+    return ast;
+  };
+
+  Getter.prototype['readAST:text/gss'] = function(node) {
+    throw new Error("did not include GSS's compilers");
   };
 
   return Getter;
@@ -8579,6 +9007,10 @@ Setter = (function() {
       this.container = document;
     }
   }
+
+  Setter.prototype.clean = function() {};
+
+  Setter.prototype.destroy = function() {};
 
   Setter.prototype.set = function(vars) {
     var dimension, element, gid, key, val, _results;
@@ -8672,7 +9104,7 @@ Setter = (function() {
       @_has_setVars_styleTag = true
       @container.insertAdjacentHTML('afterbegin','<style data-gss-generated></style>')
       @generatedStyle = @container.childNodes[0]
-    html = ""    
+    html = ""
     for key of vars
       if key[0] is "$"
         gid = key.substring(1, key.indexOf("["))
@@ -8693,44 +9125,17 @@ module.exports = Setter;
 
 });
 require.register("gss/lib/gss.js", function(exports, require, module){
-var Engine, GSS, compiler, key, styleTags, val, _ref;
+var compiler;
 
 compiler = require("gss-compiler");
 
-Engine = require("gss-engine");
-
-if (!window.MutationObserver) {
-  window.MutationObserver = window.JsMutationObserver;
-}
-
-document.addEventListener("DOMContentLoaded", function(e) {
-  return GSS.boot();
-});
-
-GSS = function(_arg) {
-  var container, engine, rules, worker;
-  worker = _arg.worker, container = _arg.container, rules = _arg.rules;
-  if (!worker) {
-    worker = GSS.worker;
-  }
-  container = (container ? container : document);
-  engine = new Engine(worker, container);
-  engine.compile = function(rules) {
-    return engine.run(GSS.compile(rules));
-  };
-  if (rules) {
-    engine.compile(rules);
-  }
-  return engine;
-};
-
-GSS.engines = [];
+require("gss-engine");
 
 GSS.worker = '../browser/the-gss-engine/worker/gss-solver.js';
 
 GSS.compile = function(rules) {
   var ast;
-  ast = void 0;
+  ast = {};
   if (typeof rules === "string") {
     ast = compiler.compile(rules);
   } else if (typeof rules === "object") {
@@ -8741,79 +9146,19 @@ GSS.compile = function(rules) {
   return ast;
 };
 
-GSS.boot = function() {
-  var config, observer;
-  GSS.spawn();
-  observer = new MutationObserver(function(mutations) {
-    return GSS.spawn();
-  });
-  config = {
-    subtree: true,
-    childList: true,
-    attributes: false,
-    characterData: false
-  };
-  return observer.observe(document, config);
+GSS.Engine.prototype['compile'] = function(source) {
+  return this.run(GSS.compile(source));
 };
 
-GSS.processStyleTag = function(style, o) {
-  var container, engine, rules;
-  if (o == null) {
-    o = {};
+GSS.Getter.prototype['readAST:text/gss'] = function(node) {
+  var ast, source;
+  source = node.innerHTML.trim();
+  if (source.length === 0) {
+    return {};
   }
-  if (style.getAttribute("type") !== 'text/gss') {
-    return;
-  }
-  if (style._gss_processed) {
-    return;
-  }
-  rules = style.innerHTML.trim();
-  container = style.parentElement;
-  if (container.tagName === "HEAD") {
-    container = document;
-  }
-  o.container = container;
-  o.rules = rules;
-  engine = GSS(o);
-  engine.styleTag = style;
-  GSS.engines.push(engine);
-  return style._gss_processed = true;
+  ast = GSS.compile(source);
+  return ast;
 };
-
-styleTags = GSS.styleTags = null;
-
-GSS.spawn = function(o, from) {
-  var style, _i, _len, _results;
-  if (o == null) {
-    o = {};
-  }
-  if (from == null) {
-    from = document;
-  }
-  if (!styleTags) {
-    GSS.styleTags = styleTags = from.getElementsByTagName("style");
-  }
-  _results = [];
-  for (_i = 0, _len = styleTags.length; _i < _len; _i++) {
-    style = styleTags[_i];
-    _results.push(GSS.processStyleTag(style, o));
-  }
-  return _results;
-};
-
-GSS.stopAll = function() {
-  return alert('not implemented');
-};
-
-if (window.GSS != null) {
-  _ref = window.GSS;
-  for (key in _ref) {
-    val = _ref[key];
-    GSS[key] = val;
-  }
-}
-
-window.GSS = GSS;
 
 });
 
@@ -8837,18 +9182,19 @@ require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-vfl-compile
 require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-ccss-compiler/index.js");
 require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-vfl-compiler/index.js");
 require.alias("the-gss-compiler/lib/gss-compiler.js", "the-gss-compiler/index.js");
-require.alias("the-gss-engine/lib/GSS-id.js", "gss/deps/gss-engine/lib/GSS-id.js");
+require.alias("the-gss-engine/lib/GSS.js", "gss/deps/gss-engine/lib/GSS.js");
 require.alias("the-gss-engine/lib/dom/Query.js", "gss/deps/gss-engine/lib/dom/Query.js");
+require.alias("the-gss-engine/lib/dom/Observer.js", "gss/deps/gss-engine/lib/dom/Observer.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/lib/Engine.js");
-require.alias("the-gss-engine/lib/Command.js", "gss/deps/gss-engine/lib/Command.js");
+require.alias("the-gss-engine/lib/Commander.js", "gss/deps/gss-engine/lib/Commander.js");
 require.alias("the-gss-engine/lib/dom/Getter.js", "gss/deps/gss-engine/lib/dom/Getter.js");
 require.alias("the-gss-engine/lib/dom/Setter.js", "gss/deps/gss-engine/lib/dom/Setter.js");
-require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/index.js");
-require.alias("the-gss-engine/lib/Engine.js", "gss-engine/index.js");
+require.alias("the-gss-engine/lib/GSS.js", "gss/deps/gss-engine/index.js");
+require.alias("the-gss-engine/lib/GSS.js", "gss-engine/index.js");
 require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "the-gss-engine/deps/customevent-polyfill/CustomEvent.js");
 require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "the-gss-engine/deps/customevent-polyfill/index.js");
 require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "d4tocchini-customevent-polyfill/index.js");
-require.alias("the-gss-engine/lib/Engine.js", "the-gss-engine/index.js");
+require.alias("the-gss-engine/lib/GSS.js", "the-gss-engine/index.js");
 require.alias("gss/lib/gss.js", "gss/index.js");if (typeof exports == "object") {
   module.exports = require("gss");
 } else if (typeof define == "function" && define.amd) {

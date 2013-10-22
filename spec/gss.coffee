@@ -10,19 +10,21 @@ solvedValue = (id, dimension, solved) ->
 measure = (id, dimension) ->
   return Math.floor el(id).getBoundingClientRect()[dimension]
 
-run = ({html, rules, after}) ->
-  name = rules?.trim?()
-  describe "#{(if name then name else "//")}", ->
+run = ({html, rules, after, name}) ->
+  if !name then name = rules?.trim?()  
+  name += " //"
+  describe "#{(name)}", ->
     container = null
-    before (done) ->
-      container = document.createElement 'div'
-      container.style.marginLeft = '-1000px'      
-      container.innerHTML = html
-      done()
     engine = null
     solvedValues = null
-    
-    it 'should produce correct values', (done) ->      
+    before ->
+      container = document.createElement 'div'
+      document.getElementById('fixtures').appendChild container
+      container.style.marginLeft = '-1000px'      
+      container.innerHTML = html
+      engine = GSS(container)          
+        
+    it 'should produce correct values', (done) ->
       container.addEventListener 'solved', (e) ->
         values = e.detail.values
         engine = e.detail.engine
@@ -30,11 +32,11 @@ run = ({html, rules, after}) ->
           after values
         else
           throw new Error "after needed to test something"        
-        engine.stop()
+        #engine.destroy()
+        container.remove()
         done()
-      document.querySelector('body').appendChild container
-      if rules
-        engine = GSS({container:container, rules:rules})
+      if rules        
+        engine.compile(rules)
       #else
       #  GSS.spawn()     
 
@@ -108,30 +110,24 @@ describe 'GSS runtime', ->
   #
   #
   describe "<style>", ->
+    
     run
+      name: "CCSS"
       html: """
         <style type="text/gss">
-          @horizontal [#s1(==11)][#s2(==9)]-100-[#s3(==10)];
-          #s1[x] == 10;
+          #button3[height] == 100;
+          #button3[width] == 150;
         </style>
-        <div id="s1"></div>
-        <div id="s2"></div>
-        <div id="s3"></div>
+        <button id="button3">Hello, world</button>
         """
       after: (solved) ->
-        # solver
-        chai.expect(solvedValue('s1','x',solved)).to.equal 10
-        chai.expect(solvedValue('s1','width',solved)).to.equal 11
-        # dom
-        chai.expect(measure('s1','left')).to.equal 10
-        chai.expect(measure('s1','width')).to.equal 11
-        chai.expect(measure('s2','left')).to.equal 21
-        chai.expect(measure('s2','width')).to.equal 9
-        chai.expect(measure('s3','left')).to.equal 130
-        chai.expect(measure('s3','width')).to.equal 10
-  
-  describe "<style>", ->
+        chai.expect(solvedValue('button3','height',solved)).to.equal 100
+        chai.expect(measure('button3','height')).to.equal 100
+        chai.expect(solvedValue('button3','width',solved)).to.equal 150
+        chai.expect(measure('button3','width')).to.equal 150
+        
     run
+      name: "VFL"
       html: """
         <style type="text/gss">
           @horizontal [#s1(==11)][#s2(==9)]-100-[#s3(==10)];
