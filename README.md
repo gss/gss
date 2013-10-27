@@ -1,6 +1,8 @@
 GSS runtime [![Build Status](https://travis-ci.org/the-gss/gss.png?branch=master)](https://travis-ci.org/the-gss/gss)
 ===========
 
+**WARNING: GSS is highly unstable right now, there be dragons...**
+
 [![Cross-browser testing status](https://saucelabs.com/browser-matrix/gss-core.svg)](https://saucelabs.com/u/gss-core)
 
 Compiles and runs Grid Style Sheet (GSS) rules. GSS is an implementation of Badros & Borning's [Constraint Cascading Style Sheets](http://www.cs.washington.edu/research/constraints/web/ccss-uwtr.pdf), enabling far better layout control through building relational rules between different elements.

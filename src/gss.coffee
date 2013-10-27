@@ -4,7 +4,7 @@ require("gss-engine")
 
 # Monkey patching our compiling powers
 
-GSS.worker = '../browser/the-gss-engine/worker/gss-solver.js'
+#GSS.worker = '../browser/the-gss-engine/worker/gss-solver.js'
 
 GSS.compile = (rules) ->
   ast = {}
