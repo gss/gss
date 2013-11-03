@@ -1,5 +1,10 @@
 compiler = require("gss-compiler")
 
+if !window.GSS_CONFIG
+  window.GSS_CONFIG = {}
+if !window.GSS_CONFIG.workerURL
+  window.GSS_CONFIG.workerURL = '../browser/the-gss-engine/worker/gss-solver.js'
+
 require("gss-engine")
 
 # Monkey patching our compiling powers

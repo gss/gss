@@ -3032,7 +3032,7 @@ module.exports = (function(){
       }
       
       function parse_Selector() {
-        var result0, result1, result2;
+        var result0, result1, result2, result3;
         var pos0, pos1;
         
         reportFailures++;
@@ -3116,38 +3116,53 @@ module.exports = (function(){
           if (result0 === null) {
             pos0 = pos;
             pos1 = pos;
-            if (input.substr(pos, 2) === "$(") {
-              result0 = "$(";
-              pos += 2;
+            if (input.charCodeAt(pos) === 36) {
+              result0 = "$";
+              pos++;
             } else {
               result0 = null;
               if (reportFailures === 0) {
-                matchFailed("\"$(\"");
+                matchFailed("\"$\"");
               }
             }
+            result0 = result0 !== null ? result0 : "";
             if (result0 !== null) {
-              result2 = parse_QuerySelectorChars();
-              if (result2 !== null) {
-                result1 = [];
-                while (result2 !== null) {
-                  result1.push(result2);
-                  result2 = parse_QuerySelectorChars();
-                }
+              if (input.charCodeAt(pos) === 40) {
+                result1 = "(";
+                pos++;
               } else {
                 result1 = null;
+                if (reportFailures === 0) {
+                  matchFailed("\"(\"");
+                }
               }
               if (result1 !== null) {
-                if (input.charCodeAt(pos) === 41) {
-                  result2 = ")";
-                  pos++;
+                result3 = parse_QuerySelectorChars();
+                if (result3 !== null) {
+                  result2 = [];
+                  while (result3 !== null) {
+                    result2.push(result3);
+                    result3 = parse_QuerySelectorChars();
+                  }
                 } else {
                   result2 = null;
-                  if (reportFailures === 0) {
-                    matchFailed("\")\"");
-                  }
                 }
                 if (result2 !== null) {
-                  result0 = [result0, result1, result2];
+                  if (input.charCodeAt(pos) === 41) {
+                    result3 = ")";
+                    pos++;
+                  } else {
+                    result3 = null;
+                    if (reportFailures === 0) {
+                      matchFailed("\")\"");
+                    }
+                  }
+                  if (result3 !== null) {
+                    result0 = [result0, result1, result2, result3];
+                  } else {
+                    result0 = null;
+                    pos = pos1;
+                  }
                 } else {
                   result0 = null;
                   pos = pos1;
@@ -3161,7 +3176,7 @@ module.exports = (function(){
               pos = pos1;
             }
             if (result0 !== null) {
-              result0 = (function(offset, $) { $=p.toString($); return {selector:$,ast:["$all",$]} })(pos0, result0[1]);
+              result0 = (function(offset, $) { $=p.toString($); return {selector:$,ast:["$all",$]} })(pos0, result0[2]);
             }
             if (result0 === null) {
               pos = pos0;
@@ -3271,6 +3286,17 @@ module.exports = (function(){
               result0 = null;
               if (reportFailures === 0) {
                 matchFailed("\"host\"");
+              }
+            }
+            if (result0 === null) {
+              if (input.substr(pos, 5) === "scope") {
+                result0 = "scope";
+                pos += 5;
+              } else {
+                result0 = null;
+                if (reportFailures === 0) {
+                  matchFailed("\"scope\"");
+                }
               }
             }
           }
@@ -7684,14 +7710,9 @@ window.CustomEvent = CustomEvent;
 
 });
 require.register("the-gss-engine/lib/GSS.js", function(exports, require, module){
-var GSS, getTime, getter, key, val, _ref,
-  __slice = [].slice;
+var GSS, LOG_PASS, TIME, TIME_END, key, styleQuery, val, _ref, _scopesToLoad;
 
 require("customevent-polyfill");
-
-if (!window.MutationObserver) {
-  window.MutationObserver = window.JsMutationObserver;
-}
 
 if (window.GSS) {
   throw new Error("Only one GSS object per window");
@@ -7703,7 +7724,7 @@ GSS = function(o) {
     return GSS.engines.root;
   }
   if (o.tagName) {
-    engine = GSS.getEngine(o);
+    engine = GSS.get.engine(o);
     if (engine) {
       return engine;
     }
@@ -7712,9 +7733,8 @@ GSS = function(o) {
     });
   } else if (o !== null && typeof o === 'object') {
     if (o.scope) {
-      engine = GSS.getEngine(o.scope);
+      engine = GSS.get.engine(o.scope);
       if (engine) {
-        engine.boot(o);
         return engine;
       }
     }
@@ -7724,15 +7744,17 @@ GSS = function(o) {
   }
 };
 
-GSS.boot = function() {
-  return GSS({
-    scope: GSS.Getter.getRootScope(),
-    is_root: true
-  });
-};
-
 GSS.config = {
-  resizeDebounce: 30
+  resizeDebounce: 32,
+  observe: true,
+  debug: false,
+  warn: false,
+  perf: false,
+  scoped: true,
+  roundBeforeSet: false,
+  processBeforeSet: null,
+  useOffsetParent: true,
+  workerURL: '../browser/gss-engine/worker/gss-solver.js'
 };
 
 if (typeof GSS_CONFIG !== "undefined" && GSS_CONFIG !== null) {
@@ -7742,54 +7764,23 @@ if (typeof GSS_CONFIG !== "undefined" && GSS_CONFIG !== null) {
   }
 }
 
-GSS.getEngine = function(el) {
-  return GSS.engines.byId[this.getId(el)];
+GSS.deblog = function() {
+  if (GSS.config.debug) {
+    return console.log.apply(console, arguments);
+  }
 };
 
-GSS._ = {};
-
-getTime = Date.now || function() {
-  return new Date().getTime();
-};
-
-GSS._.debounce = function(func, wait, immediate) {
-  var args, context, result, timeout, timestamp;
-  timeout = void 0;
-  args = void 0;
-  context = void 0;
-  timestamp = void 0;
-  result = void 0;
-  return function() {
-    var callNow, later;
-    context = this;
-    args = __slice.call(arguments);
-    timestamp = getTime();
-    later = function() {
-      var last;
-      last = getTime() - timestamp;
-      if (last < wait) {
-        return timeout = setTimeout(later, wait - last);
-      } else {
-        timeout = null;
-        if (!immediate) {
-          return result = func.apply(context, args);
-        }
-      }
-    };
-    callNow = immediate && !timeout;
-    if (!timeout) {
-      timeout = setTimeout(later, wait);
-    }
-    if (callNow) {
-      result = func.apply(context, args);
-    }
-    return result;
-  };
+GSS.warn = function() {
+  if (GSS.config.warn) {
+    return console.warn.apply(console, arguments);
+  }
 };
 
 window.GSS = GSS;
 
-GSS.workerURL = require("./WorkerBlobUrl.js");
+GSS._ = require("./_.js");
+
+GSS.EventTrigger = require("./EventTrigger.js");
 
 GSS.Getter = require("./dom/Getter.js");
 
@@ -7810,11 +7801,318 @@ for (key in _ref) {
   GSS[key] = val;
 }
 
-GSS.getter = new GSS.Getter();
-
-getter = GSS.getter;
+GSS.get = new GSS.Getter();
 
 GSS.observer = require("./dom/Observer.js");
+
+LOG_PASS = function(pass, bg) {
+  if (bg == null) {
+    bg = "green";
+  }
+  return GSS.deblog("%c" + pass, "color:white; padding:2px; font-size:14px; background:" + bg + ";");
+};
+
+TIME = function() {
+  if (GSS.config.perf) {
+    return console.time.apply(console, arguments);
+  }
+};
+
+TIME_END = function() {
+  if (GSS.config.perf) {
+    return console.timeEnd.apply(console, arguments);
+  }
+};
+
+GSS.boot = function() {
+  return GSS({
+    scope: GSS.Getter.getRootScope(),
+    is_root: true
+  });
+};
+
+GSS.load = function() {
+  GSS.dirtyLoadEngines();
+  return GSS.render();
+};
+
+GSS.render = function() {
+  TIME("RENDER");
+  GSS.updateIfNeeded();
+  return GSS.layoutIfNeeded();
+};
+
+GSS.needsUpdate = false;
+
+GSS.setNeedsUpdate = function(bool) {
+  if (bool) {
+    if (!GSS.needsUpdate) {
+      GSS._.defer(GSS.updateIfNeeded);
+    }
+    return GSS.needsUpdate = true;
+  } else {
+    return GSS.needsUpdate = false;
+  }
+};
+
+GSS.updateIfNeeded = function() {
+  if (GSS.needsUpdate) {
+    LOG_PASS("Update Pass", "orange");
+    TIME("update pass");
+    GSS.engines.root.updateIfNeeded();
+    GSS.setNeedsUpdate(false);
+    return TIME_END("update pass");
+  }
+};
+
+GSS.needsLayout = false;
+
+GSS.setNeedsLayout = function(bool) {
+  if (bool) {
+    if (!GSS.needsLayout) {
+      GSS._.defer(GSS.layoutIfNeeded);
+    }
+    return GSS.needsLayout = true;
+  } else {
+    return GSS.needsLayout = false;
+  }
+};
+
+GSS.layoutIfNeeded = function() {
+  if (GSS.needsLayout) {
+    LOG_PASS("Layout Pass", "green");
+    TIME("layout pass");
+    GSS.engines.root.layoutIfNeeded();
+    GSS.setNeedsLayout(false);
+    return TIME_END("layout pass");
+  }
+};
+
+GSS.needsDisplay = false;
+
+GSS.setNeedsDisplay = function(bool) {
+  if (bool) {
+    if (!GSS.needsDisplay) {
+      GSS._.defer(GSS.displayIfNeeded);
+    }
+    return GSS.needsDisplay = true;
+  } else {
+    return GSS.needsDisplay = false;
+  }
+};
+
+GSS.displayIfNeeded = function() {
+  if (GSS.needsDisplay) {
+    LOG_PASS("Display Pass", "violet");
+    TIME("display pass");
+    GSS.engines.root.displayIfNeeded();
+    GSS.setNeedsDisplay(false);
+    TIME_END("display pass");
+    return TIME_END("RENDER");
+  }
+};
+
+_scopesToLoad = null;
+
+styleQuery = GSS.styleQuery = new GSS.Query({
+  selector: "style",
+  isLive: true,
+  isMulti: true,
+  createNodeList: function() {
+    return document.getElementsByTagName("style");
+  },
+  afterChange: function() {
+    var engine, id, node, scope, _i, _j, _k, _len, _len1, _len2, _ref1, _ref2, _results;
+    _scopesToLoad = [];
+    if (this.changedLastUpdate) {
+      _ref1 = this.lastAddedIds;
+      for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
+        id = _ref1[_i];
+        node = GSS.getById(id);
+        if (GSS.get.isStyleNode(node)) {
+          scope = GSS.get.scopeForStyleNode(node);
+          if (_scopesToLoad.indexOf(scope) === -1 && scope) {
+            _scopesToLoad.push(GSS.get.scopeForStyleNode(node));
+          }
+        }
+      }
+      _ref2 = this.lastRemovedIds;
+      for (_j = 0, _len1 = _ref2.length; _j < _len1; _j++) {
+        id = _ref2[_j];
+        node = GSS.getById(id);
+        if (GSS.get.isStyleNode(node)) {
+          scope = GSS.get.scopeForStyleNode(node);
+          if (_scopesToLoad.indexOf(scope) === -1 && ((scope != null ? scope.parentNode : void 0) != null)) {
+            if (document.contains(scope)) {
+              _scopesToLoad.push(scope);
+            }
+          }
+        }
+      }
+      _results = [];
+      for (_k = 0, _len2 = _scopesToLoad.length; _k < _len2; _k++) {
+        scope = _scopesToLoad[_k];
+        engine = GSS({
+          scope: scope
+        });
+        if (engine) {
+          _results.push(engine.load());
+        } else {
+          _results.push(void 0);
+        }
+      }
+      return _results;
+    }
+  }
+});
+
+GSS.dirtyLoadEngines = function() {
+  var engine, i;
+  i = 0;
+  engine = GSS.engines[i];
+  while (!!engine) {
+    if (i > 0) {
+      if (!document.documentElement.contains(engine.scope)) {
+        engine.destroyChildren();
+        engine.destroy();
+      }
+    }
+    i++;
+    engine = GSS.engines[i];
+  }
+  return styleQuery.update();
+};
+
+});
+require.register("the-gss-engine/lib/_.js", function(exports, require, module){
+var getTime, _,
+  __slice = [].slice;
+
+getTime = Date.now || function() {
+  return new Date().getTime();
+};
+
+_ = {
+  defer: function(func) {
+    return setTimeout(func, 1);
+  },
+  debounce: function(func, wait, immediate) {
+    var args, context, result, timeout, timestamp;
+    timeout = void 0;
+    args = void 0;
+    context = void 0;
+    timestamp = void 0;
+    result = void 0;
+    return function() {
+      var callNow, later;
+      context = this;
+      args = __slice.call(arguments);
+      timestamp = getTime();
+      later = function() {
+        var last;
+        last = getTime() - timestamp;
+        if (last < wait) {
+          return timeout = setTimeout(later, wait - last);
+        } else {
+          timeout = null;
+          if (!immediate) {
+            return result = func.apply(context, args);
+          }
+        }
+      };
+      callNow = immediate && !timeout;
+      if (!timeout) {
+        timeout = setTimeout(later, wait);
+      }
+      if (callNow) {
+        result = func.apply(context, args);
+      }
+      return result;
+    };
+  }
+};
+
+module.exports = _;
+
+});
+require.register("the-gss-engine/lib/EventTrigger.js", function(exports, require, module){
+var EventTrigger;
+
+EventTrigger = (function() {
+  function EventTrigger() {
+    this._listenersByType = {};
+    this;
+  }
+
+  EventTrigger.prototype._getListeners = function(type) {
+    if (this._listenersByType[type]) {
+      return this._listenersByType[type];
+    }
+    this._listenersByType[type] = [];
+    return this._listenersByType[type];
+  };
+
+  EventTrigger.prototype.on = function(type, listener) {
+    var listeners;
+    listeners = this._getListeners(type);
+    if (listeners.indexOf(listener) === -1) {
+      listeners.push(listener);
+    }
+    return this;
+  };
+
+  EventTrigger.prototype.off = function(type, listener) {
+    var i, listeners;
+    listeners = this._getListeners(type);
+    i = listeners.indexOf(listener);
+    if (i !== -1) {
+      listeners.slice(i, 1);
+    }
+    return this;
+  };
+
+  EventTrigger.prototype.offAll = function(type) {
+    if (type) {
+      this._listenersByType[type] = [];
+    } else {
+      this._listenersByType = {};
+    }
+    return this;
+  };
+
+  EventTrigger.prototype.trigger = function(type, o) {
+    var listener, _i, _len, _ref;
+    _ref = this._getListeners(type);
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      listener = _ref[_i];
+      listener.call(this, o);
+    }
+    return this;
+  };
+
+  return EventTrigger;
+
+})();
+
+EventTrigger.make = function(obj) {
+  var key, val, _ref;
+  if (obj == null) {
+    obj = {};
+  }
+  EventTrigger.prototype.constructor.call(obj);
+  _ref = EventTrigger.prototype;
+  for (key in _ref) {
+    val = _ref[key];
+    if (key === "constructor") {
+      val.call(obj);
+    } else {
+      obj[key] = val;
+    }
+  }
+  return obj;
+};
+
+module.exports = EventTrigger;
 
 });
 require.register("the-gss-engine/lib/dom/Query.js", function(exports, require, module){
@@ -7844,9 +8142,7 @@ arrayAddsRemoves = function(old, neu) {
 };
 
 LOG = function() {
-  if (GSS.config.debug) {
-    return console.log.apply(console, ["Query::"].concat(__slice.call(arguments)));
-  }
+  return GSS.deblog.apply(GSS, ["Query"].concat(__slice.call(arguments)));
 };
 
 Query = (function() {
@@ -7935,147 +8231,150 @@ module.exports = Query;
 
 });
 require.register("the-gss-engine/lib/dom/Observer.js", function(exports, require, module){
-var LOG, observer, styleQuery, _scopesToLoad,
+var LOG, observer,
   __slice = [].slice;
 
 LOG = function() {
-  if (GSS.config.debug) {
-    return console.log.apply(console, ["Observer"].concat(__slice.call(arguments)));
-  }
+  return GSS.deblog.apply(GSS, ["Observer"].concat(__slice.call(arguments)));
 };
-
-_scopesToLoad = null;
-
-styleQuery = GSS.styleQuery = new GSS.Query({
-  selector: "style",
-  isLive: true,
-  isMulti: true,
-  createNodeList: function() {
-    return document.getElementsByTagName("style");
-  },
-  afterChange: function() {
-    var id, node, scope, _i, _j, _k, _len, _len1, _len2, _ref, _ref1, _results;
-    LOG("afterChange");
-    _scopesToLoad = [];
-    if (this.changedLastUpdate) {
-      _ref = this.lastAddedIds;
-      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-        id = _ref[_i];
-        node = GSS.getById(id);
-        if (GSS.getter.isStyleNode(node)) {
-          scope = GSS.getter.getEngineScopeForStyleNode(node);
-          if (_scopesToLoad.indexOf(scope) === -1 && scope) {
-            _scopesToLoad.push(GSS.getter.getEngineScopeForStyleNode(node));
-          }
-        }
-      }
-      _ref1 = this.lastRemovedIds;
-      for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
-        id = _ref1[_j];
-        node = GSS.getById(id);
-        if (GSS.getter.isStyleNode(node)) {
-          scope = GSS.getter.getEngineScopeForStyleNode(node);
-          if (_scopesToLoad.indexOf(scope) === -1 && ((scope != null ? scope.parentNode : void 0) != null)) {
-            _scopesToLoad.push(scope);
-          }
-        }
-      }
-      _results = [];
-      for (_k = 0, _len2 = _scopesToLoad.length; _k < _len2; _k++) {
-        scope = _scopesToLoad[_k];
-        LOG("afterUpdate scopeToLoad", scope);
-        _results.push(GSS(scope).loadAndRun());
-      }
-      return _results;
-    }
-  }
-});
 
 if (!window.MutationObserver) {
   window.MutationObserver = window.JsMutationObserver;
 }
 
 observer = new MutationObserver(function(mutations) {
-  var m, node, _i, _j, _len, _len1, _ref;
+  var engine, gid, invalidMeasureIds, m, nodesToIgnore, scope, scopesToLoad, scopesToUpdateChildList, target, _i, _j, _k, _l, _len, _len1, _len2, _len3, _ref;
   LOG("MutationObserver");
+  scopesToLoad = [];
+  nodesToIgnore = [];
+  scopesToUpdateChildList = [];
+  invalidMeasureIds = [];
   for (_i = 0, _len = mutations.length; _i < _len; _i++) {
     m = mutations[_i];
-    if (m.removedNodes.length > 0) {
-      _ref = m.removedNodes;
-      for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
-        node = _ref[_j];
-        if (node._gss_is_scope) {
-          GSS.getEngine(node).destroy();
+    if (m.type === "characterData") {
+      if (GSS.get.isStyleNode(m.target.parentElement)) {
+        scope = GSS.get.scopeForStyleNode(m.target.parentElement);
+        if (scopesToLoad.indexOf(scope) === -1) {
+          scopesToLoad.push(scope);
         }
-        /*
-        # scopes with removed ASTs
-        if GSS.getter.isStyleNode node
-          scope = GSS.getter.getEngineScopeForStyleNode node
-          if scopesToLoad.indexOf(scope) is -1 and scope
-            scopesToLoad.push scope
-        */
-
       }
     }
-    /*
-    # els removed from scope
-    if m.addedNodes.length > 0 # nodelist are weird?
-      for node in m.addedNodes        
-        # scopes with new ASTs        
-        if GSS.getter.isStyleNode node
-          scope = GSS.getter.getEngineScopeForStyleNode node
-          if scopesToLoad.indexOf(scope) is -1
-            scopesToLoad.push scope
-    
-    for scope in scopesToLoad
-      GSS(scope).loadAndRun()
-    */
-
-  }
-  return styleQuery.update();
-});
-
-GSS.loadAndRun = function() {
-  var node, scope, scopesToLoad, _i, _j, _len, _len1, _ref, _results;
-  scopesToLoad = [];
-  _ref = GSS.getter.getAllStyleNodes();
-  for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-    node = _ref[_i];
-    if (GSS.getter.isStyleNode(node)) {
-      scope = GSS.getter.getEngineScopeForStyleNode(node);
-      if (scopesToLoad.indexOf(scope) === -1) {
-        scopesToLoad.push(scope);
+    if (m.type === "attributes" || m.type === "childList") {
+      if (m.type === "attributes" && m.attributename === "data-gss-id") {
+        nodesToIgnore.push(m.target);
+      } else if (nodesToIgnore.indexOf(m.target) === -1) {
+        scope = GSS.get.nearestScope(m.target);
+        if (scope) {
+          if (scopesToUpdateChildList.indexOf(scope) === -1) {
+            scopesToUpdateChildList.push(scope);
+          }
+        }
+      }
+    }
+    gid = null;
+    if (m.type === "characterData" || m.type === "attributes" || m.type === "childList") {
+      if (m.type === "characterData") {
+        target = m.target.parentElement;
+        gid = "$" + GSS.getId(m.target.parentElement);
+      } else if (nodesToIgnore.indexOf(m.target) === -1) {
+        gid = "$" + GSS.getId(m.target);
+      }
+      if (gid != null) {
+        if (invalidMeasureIds.indexOf(gid) === -1) {
+          invalidMeasureIds.push(gid);
+        }
       }
     }
   }
-  _results = [];
   for (_j = 0, _len1 = scopesToLoad.length; _j < _len1; _j++) {
     scope = scopesToLoad[_j];
-    _results.push(GSS(scope).loadAndRun());
+    GSS.get.engine(scope).load();
   }
-  return _results;
+  for (_k = 0, _len2 = scopesToUpdateChildList.length; _k < _len2; _k++) {
+    scope = scopesToUpdateChildList[_k];
+    if (scopesToLoad.indexOf(scope) === -1) {
+      GSS.get.engine(scope).updateChildList();
+    }
+  }
+  if (invalidMeasureIds.length > 0) {
+    _ref = GSS.engines;
+    for (_l = 0, _len3 = _ref.length; _l < _len3; _l++) {
+      engine = _ref[_l];
+      engine.commander.handleInvalidMeasures(invalidMeasureIds);
+    }
+  }
+  scopesToLoad = null;
+  nodesToIgnore = null;
+  scopesToUpdateChildList = null;
+  invalidMeasureIds = null;
+  /*
+  for m in mutations
+    # els removed from scope
+    if m.removedNodes.length > 0 # nodelist are weird?
+      for node in m.removedNodes
+        # destroy engines
+        if node._gss_is_scope
+          GSS.get.engine(node).destroy()      
+        
+        ## scopes with removed ASTs
+        #if GSS.get.isStyleNode node
+        #  scope = GSS.get.scopeForStyleNode node
+        #  if scopesToLoad.indexOf(scope) is -1 and scope
+        #    scopesToLoad.push scope  
+        #
+        
+    
+    ## els removed from scope
+    #if m.addedNodes.length > 0 # nodelist are weird?
+    #  for node in m.addedNodes        
+    #    # scopes with new ASTs        
+    #    if GSS.get.isStyleNode node
+    #      scope = GSS.get.scopeForStyleNode node
+    #      if scopesToLoad.indexOf(scope) is -1
+    #        scopesToLoad.push scope
+    #
+    #for scope in scopesToLoad
+    #  GSS(scope).load()
+  */
+
+  return GSS.load();
+});
+
+GSS.is_observing = false;
+
+GSS.observe = function() {
+  if (!GSS.is_observing && GSS.config.observe) {
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true
+    });
+    return GSS.is_observing = true;
+  }
+};
+
+GSS.unobserve = function() {
+  observer.disconnect();
+  return GSS.is_observing = false;
 };
 
 document.addEventListener("DOMContentLoaded", function(e) {
-  console.time("boot")
   GSS.boot();
   LOG("DOMContentLoaded");
-  observer.observe(document, {
-    subtree: true,
-    childList: true,
-    attributes: false,
-    characterData: false
-  });
-  return styleQuery.update();
+  GSS.load();
+  return GSS.observe();
 });
 
 module.exports = observer;
 
 });
 require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
-var Engine, LOG, cleanAndSnatch, engines,
+var Engine, LOG, TIME, TIME_END, cleanAndSnatch, engines,
   __slice = [].slice,
-  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+  __hasProp = {}.hasOwnProperty,
+  __extends = function(child, parent) { for (var key in parent) { if (__hasProp.call(parent, key)) child[key] = parent[key]; } function ctor() { this.constructor = child; } ctor.prototype = parent.prototype; child.prototype = new ctor(); child.__super__ = parent.prototype; return child; };
 
 if (typeof GSS === "undefined" || GSS === null) {
   throw new Error("GSS object needed for Engine");
@@ -8100,10 +8399,20 @@ cleanAndSnatch = function(frm, to) {
   return to;
 };
 
-LOG = function() {
-  if (GSS.config.debug) {
-    return console.log.apply(console, ["Engine::"].concat(__slice.call(arguments)));
+TIME = function() {
+  if (GSS.config.perf) {
+    return console.time.apply(console, arguments);
   }
+};
+
+TIME_END = function() {
+  if (GSS.config.perf) {
+    return console.timeEnd.apply(console, arguments);
+  }
+};
+
+LOG = function() {
+  return GSS.deblog.apply(GSS, ["Engine"].concat(__slice.call(arguments)));
 };
 
 GSS.engines = engines = [];
@@ -8112,31 +8421,30 @@ engines.byId = {};
 
 engines.root = null;
 
-Engine = (function() {
+Engine = (function(_super) {
+  __extends(Engine, _super);
+
   function Engine(o) {
     this.dispatch = __bind(this.dispatch, this);
     this.handleWorkerMessage = __bind(this.handleWorkerMessage, this);
-    this.resetWorkerCommands = __bind(this.resetWorkerCommands, this);
-    this._handleMutations = __bind(this._handleMutations, this);
+    this.updateChildList = __bind(this.updateChildList, this);
+    this.load = __bind(this.load, this);
     this.execute = __bind(this.execute, this);
+    Engine.__super__.constructor.apply(this, arguments);
     this.scope = o.scope, this.workerURL = o.workerURL, this.vars = o.vars, this.getter = o.getter, this.setter = o.setter, this.is_root = o.is_root;
     if (!this.vars) {
       this.vars = {};
     }
+    this.varKeysByTacker = {};
+    this.varKeys = [];
     if (!this.scope) {
-      this.scope = GSS.getter.getRootScope();
+      new Error("Scope required for Engine");
     }
     if (this.scope.tagName === "HEAD") {
       this.scope = document;
     }
-    if (!this.getter) {
-      this.getter = new GSS.Getter(this.scope);
-    }
-    if (!this.setter) {
-      this.setter = new GSS.Setter(this.scope);
-    }
     if (!this.workerURL) {
-      this.workerURL = GSS.workerURL;
+      this.workerURL = GSS.config.workerURL;
     }
     this.id = GSS.setupScopeId(this.scope);
     this.commander = new GSS.Commander(this);
@@ -8145,66 +8453,69 @@ Engine = (function() {
     this.workerMessageHistory = [];
     this.lastWorkerCommands = null;
     this.queryCache = {};
-    this.observer = new MutationObserver(this._handleMutations);
-    GSS.engines.push(this);
-    engines.byId[this.id] = this;
     this.cssDump = null;
     LOG("constructor() @", this);
-    if (this.is_root) {
-      engines.root = this;
-    }
     if (this.scope === GSS.Getter.getRootScope()) {
       this.queryScope = document;
     } else {
       this.queryScope = this.scope;
     }
+    if (!this.getter) {
+      this.getter = new GSS.Getter(this.queryScope);
+    }
+    if (!this.setter) {
+      this.setter = new GSS.Setter(this.queryScope);
+    }
+    this.childEngines = [];
+    this.parentEngine = null;
+    if (this.is_root) {
+      engines.root = this;
+    } else {
+      this.parentEngine = GSS.get.nearestEngine(this.scope, true);
+      if (!this.parentEngine) {
+        throw new Error("ParentEngine missing, WTF");
+      }
+      this.parentEngine.childEngines.push(this);
+    }
+    GSS.engines.push(this);
+    engines.byId[this.id] = this;
     this;
   }
 
   Engine.prototype.is_running = false;
 
-  /*
-  run: (ast) ->
-    if ast.commands
-      @is_running = true
-      # digest
-      @execute ast.commands      
-      #debounced = () =>
-      @solve()
-      #setTimeout debounced, 1
-      @observe()
-    @
-  */
-
-
   Engine.prototype.run = function(asts) {
-    var ast, _i, _len;
+    var ast, _i, _len, _results;
     LOG(this.id, ".run(asts)", asts);
     if (asts instanceof Array) {
+      _results = [];
       for (_i = 0, _len = asts.length; _i < _len; _i++) {
         ast = asts[_i];
-        this._run(ast);
+        _results.push(this._run(ast));
       }
+      return _results;
     } else {
-      this._run(asts);
-    }
-    if (this.workerCommands.length > 0) {
-      this.is_running = true;
-      return this.solve();
+      return this._run(asts);
     }
   };
 
   Engine.prototype._run = function(ast) {
-    if (ast.css) {
-      this.unobserve();
-      this.setupCSSDumpIfNeeded();
-      this.cssDump.insertAdjacentHTML("beforeend", ast.css);
-      this.observe();
-    }
     if (ast.commands) {
-      return this.execute(ast.commands);
+      this.execute(ast.commands);
+    }
+    if (ast.css) {
+      this.cssToDump = ast.css;
+      return this.dumpCSSIfNeeded();
     }
   };
+
+  Engine.prototype.execute = function(commands) {
+    return this.commander.execute(commands);
+  };
+
+  Engine.prototype.cssToDump = null;
+
+  Engine.prototype.cssDump = null;
 
   Engine.prototype.setupCSSDumpIfNeeded = function() {
     if (!this.cssDump) {
@@ -8214,13 +8525,170 @@ Engine = (function() {
     }
   };
 
-  Engine.prototype.execute = function(commands) {
-    return this.commander.execute(commands);
+  Engine.prototype.dumpCSSIfNeeded = function() {
+    if (this.cssToDump) {
+      this.setupCSSDumpIfNeeded();
+      this.cssDump.insertAdjacentHTML("beforeend", this.cssToDump);
+      return this.cssToDump = null;
+    }
   };
 
-  Engine.prototype.loadAndRun = function() {
+  Engine.prototype.CSSDumper_clean = function() {
+    var _ref;
+    this.cssToDump = null;
+    return (_ref = this.cssDump) != null ? _ref.innerHTML = "" : void 0;
+  };
+
+  Engine.prototype.CSSDumper_destroy = function() {
+    this.cssToDump = null;
+    return this.cssDump = null;
+  };
+
+  Engine.prototype.needsUpdate = false;
+
+  Engine.prototype.setNeedsUpdate = function(bool) {
+    LOG(this.id, ".setNeedsUpdate( " + bool + " )");
+    if (bool) {
+      GSS.setNeedsUpdate(true);
+      return this.needsUpdate = true;
+    } else {
+      return this.needsUpdate = false;
+    }
+  };
+
+  Engine.prototype.updateIfNeeded = function() {
+    var child, _i, _len, _ref, _results;
+    LOG(this.id, ".updateIfNeeded()");
+    if (this.needsUpdate) {
+      if (this.ASTs) {
+        this.run(this.ASTs);
+        this.ASTs = null;
+      }
+      this.setNeedsUpdate(false);
+    }
+    _ref = this.childEngines;
+    _results = [];
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      child = _ref[_i];
+      _results.push(child.updateIfNeeded());
+    }
+    return _results;
+  };
+
+  Engine.prototype.needsLayout = false;
+
+  Engine.prototype.setNeedsLayout = function(bool) {
+    LOG(this.id, ".setNeedsLayout( " + bool + " )");
+    if (bool) {
+      if (!this.needsLayout) {
+        GSS.setNeedsLayout(true);
+        return this.needsLayout = true;
+      }
+    } else {
+      return this.needsLayout = false;
+    }
+  };
+
+  Engine.prototype._beforeLayoutCalls = null;
+
+  Engine.prototype.layout = function() {
+    LOG(this.id, ".layout()");
+    this.trigger("beforeLayout", this);
+    this.is_running = true;
+    this.solve();
+    return this.setNeedsLayout(false);
+  };
+
+  Engine.prototype.layoutIfNeeded = function() {
+    LOG(this.id, ".layoutIfNeeded()");
+    if (this.needsLayout) {
+      this.waitingToLayoutSubtree = true;
+      this.layout();
+    }
+    return this.layoutSubTreeIfNeeded();
+  };
+
+  Engine.prototype.waitingToLayoutSubtree = false;
+
+  Engine.prototype.layoutSubTreeIfNeeded = function() {
+    var child, _i, _len, _ref, _results;
+    this.waitingToLayoutSubtree = false;
+    _ref = this.childEngines;
+    _results = [];
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      child = _ref[_i];
+      _results.push(child.layoutIfNeeded());
+    }
+    return _results;
+  };
+
+  Engine.prototype.needsDisplay = false;
+
+  Engine.prototype.setNeedsDisplay = function(bool) {
+    if (bool) {
+      LOG(this.id, ".setNeedsDisplay( " + bool + " )");
+      GSS.setNeedsDisplay(true);
+      return this.needsDisplay = true;
+    } else {
+      LOG(this.id, ".setNeedsDisplay( " + bool + " )");
+      return this.needsDisplay = false;
+    }
+  };
+
+  Engine.prototype.displayIfNeeded = function() {
+    var child, _i, _len, _ref, _results;
+    if (this.needsDisplay) {
+      this.display();
+      this.setNeedsDisplay(false);
+    }
+    _ref = this.childEngines;
+    _results = [];
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      child = _ref[_i];
+      _results.push(child.displayIfNeeded());
+    }
+    return _results;
+  };
+
+  Engine.prototype.display = function() {
+    LOG(this.id, ".display()");
+    this.trigger("beforeDisplay", this);
+    GSS.unobserve();
+    this.setter.set(this.cleanVarsForDisplay(this.vars));
+    this.validate();
+    GSS.observe();
+    this.dispatch("solved", {
+      values: this.vars
+    });
+    return TIME_END("" + this.id + " DISPLAY PASS");
+  };
+
+  Engine.prototype.validate = function() {
+    return this.commander.validateMeasures();
+  };
+
+  Engine.prototype.cleanVarsForDisplay = function(vars) {
+    var idx, k, key, keysToKill, obj, val, _i, _len;
+    obj = {};
+    keysToKill = [];
+    for (key in vars) {
+      val = vars[key];
+      obj[key] = val;
+      idx = key.indexOf("intrinsic-");
+      if (idx !== -1) {
+        keysToKill.push(key.replace("intrinsic-", ""));
+      }
+    }
+    for (_i = 0, _len = keysToKill.length; _i < _len; _i++) {
+      k = keysToKill[_i];
+      delete obj[k];
+    }
+    return obj;
+  };
+
+  Engine.prototype.load = function() {
     var AST, ASTs, node, _i, _len, _ref;
-    LOG(this.id, ".loadAndRun()");
+    LOG(this.id, ".loadASTs()");
     if (this.is_running) {
       this.clean();
     }
@@ -8228,33 +8696,26 @@ Engine = (function() {
     _ref = this.getter.getAllStyleNodes();
     for (_i = 0, _len = _ref.length; _i < _len; _i++) {
       node = _ref[_i];
-      AST = this.getter.readAST(node);
-      if (AST) {
-        ASTs.push(AST);
+      if (this.scope === GSS.get.scopeForStyleNode(node)) {
+        AST = this.getter.readAST(node);
+        if (AST) {
+          ASTs.push(AST);
+        }
       }
-      /*
-      if node.isContentEditable and !node._isFixingSelfFromBullShit
-        node._isFixingSelfFromBullShit = true
-        node.addEventListener "input", @onEditableStyleInput
-      */
-
     }
-    this.run(ASTs);
+    this.ASTs = ASTs;
+    this.setNeedsUpdate(true);
     return this;
   };
 
-  /*
-  onEditableStyleInput: (e) =>
-    @unobserve()
-    e.target.innerHTML = e.target.innerText
-    @observe()
-    @loadAndRun()
-  */
-
-
   Engine.prototype.clean = function() {
-    var key, query, selector, val, _base, _base1, _ref, _ref1, _ref2;
+    var key, query, selector, val, _base, _base1, _ref, _ref1;
     LOG(this.id, ".clean()");
+    this.offAll();
+    this.setNeedsLayout(false);
+    this.setNeedsDisplay(false);
+    this.setNeedsLayout(false);
+    this.waitingToLayoutSubtree = false;
     this.commander.clean();
     if (typeof (_base = this.getter).clean === "function") {
       _base.clean();
@@ -8262,23 +8723,23 @@ Engine = (function() {
     if (typeof (_base1 = this.setter).clean === "function") {
       _base1.clean();
     }
-    if ((_ref = this.cssDump) != null) {
-      _ref.innerHTML = "";
-    }
+    this.CSSDumper_clean();
     this.workerCommands = [];
     this.lastWorkerCommands = null;
-    _ref1 = this.vars;
-    for (key in _ref1) {
-      val = _ref1[key];
+    _ref = this.vars;
+    for (key in _ref) {
+      val = _ref[key];
       delete this.vars[key];
     }
+    this.varKeysByTacker = {};
+    this.varKeys = [];
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
     }
-    _ref2 = this.queryCache;
-    for (selector in _ref2) {
-      query = _ref2[selector];
+    _ref1 = this.queryCache;
+    for (selector in _ref1) {
+      query = _ref1[selector];
       query.destroy();
       this.queryCache[selector] = null;
     }
@@ -8289,28 +8750,36 @@ Engine = (function() {
   Engine.prototype.stopped = false;
 
   Engine.prototype.stop = function() {
-    console.warn("Stop deprecated for destroyed");
+    console.warn("Stop deprecated for destroy");
     this.destroy();
-    /*
-    if @stopped then return @
-    @stopped = true
-    @unobserve()
-    if @worker
-      @worker.terminate()
-      delete @worker
-    for selector, query of @queryCache
-      query.destroy()
-      @queryCache[selector] = null
-    @queryCache = {}
-    */
-
     return this;
   };
 
   Engine.prototype.is_destroyed = false;
 
+  Engine.prototype.destroyChildren = function() {
+    var e, _i, _len, _ref, _results;
+    _ref = this.childEngines;
+    _results = [];
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      e = _ref[_i];
+      if (!e.is_destroyed) {
+        _results.push(e.destroy());
+      } else {
+        _results.push(void 0);
+      }
+    }
+    return _results;
+  };
+
   Engine.prototype.destroy = function() {
     var i, query, selector, _base, _base1, _ref;
+    LOG(this.id, ".destroy()");
+    this.offAll();
+    this.setNeedsLayout(false);
+    this.setNeedsDisplay(false);
+    this.setNeedsLayout(false);
+    this.waitingToLayoutSubtree = false;
     this.is_destroyed = true;
     this.is_running = null;
     this.commander.destroy();
@@ -8320,9 +8789,15 @@ Engine = (function() {
     if (typeof (_base1 = this.setter).destroy === "function") {
       _base1.destroy();
     }
-    this.unobserve();
-    this.observer = null;
-    this.cssDump = null;
+    this.parentEngine.childEngines.splice(this.parentEngine.childEngines.indexOf(this), 1);
+    this.parentEngine = null;
+    i = engines.indexOf(this);
+    if (i > -1) {
+      engines.splice(i, 1);
+    }
+    delete engines.byId[this.id];
+    GSS._ids_killed([this.id]);
+    this.CSSDumper_destroy();
     this.ast = null;
     this.getter = null;
     this.setter = null;
@@ -8332,6 +8807,8 @@ Engine = (function() {
     this.workerMessageHistory = null;
     this.lastWorkerCommands = null;
     this.vars = null;
+    this.varKeysByTacker = null;
+    this.varKeys = null;
     if (this.worker) {
       this.worker.terminate();
       this.worker = null;
@@ -8343,39 +8820,15 @@ Engine = (function() {
       this.queryCache[selector] = null;
     }
     this.queryCache = null;
-    i = engines.indexOf(this);
-    if (i > -1) {
-      engines.splice(i, 1);
-    }
-    delete engines.byId[this.id];
     return this;
   };
 
   Engine.prototype.is_observing = false;
 
-  Engine.prototype.observe = function() {
-    if (!this.is_observing) {
-      this.observer.observe(this.scope, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        characterData: true
-      });
-      this.is_observing = true;
-    }
-    return this;
-  };
-
-  Engine.prototype.unobserve = function() {
-    this.is_observing = false;
-    this.observer.disconnect();
-    return this;
-  };
-
   Engine.prototype.solve = function() {
-    console.time("run")
     var workerMessage;
     LOG(this.id, ".solve()", this.workerCommands);
+    TIME("" + this.id + " DISPLAY PASS");
     workerMessage = {
       commands: this.workerCommands
     };
@@ -8386,65 +8839,19 @@ Engine = (function() {
       this.worker.addEventListener("error", this.handleError, false);
     }
     this.worker.postMessage(workerMessage);
-    return this.resetWorkerCommands();
+    this.lastWorkerCommands = this.workerCommands;
+    return this.workerCommands = [];
   };
 
-  Engine.prototype._handleMutations = function(mutations) {
-    var gid, invalidMeasures, m, node, query, removedIds, removes, rid, selector, selectorsWithAdds, target, trigger, trigger_removes, trigger_removesFromScope, trigger_scopeRemoved, _i, _j, _k, _len, _len1, _len2, _ref, _ref1;
-    if (mutations == null) {
-      mutations = [];
-    }
-    LOG(this.id, "._handleMutations(m)", m);
-    trigger = false;
-    trigger_scopeRemoved = false;
-    trigger_removes = false;
-    trigger_removesFromScope = false;
-    removes = [];
-    invalidMeasures = [];
-    for (_i = 0, _len = mutations.length; _i < _len; _i++) {
-      m = mutations[_i];
-      if (m.type === "characterData") {
-        if (this.getter.isStyleNode(m.target.parentElement)) {
-          return this.loadAndRun();
-        }
-      }
-      if (m.removedNodes.length > 0) {
-        _ref = m.removedNodes;
-        for (_j = 0, _len1 = _ref.length; _j < _len1; _j++) {
-          node = _ref[_j];
-          if (node === this.scope) {
-            console.log("handle engine scope removed");
-          }
-          gid = GSS.getId(node);
-          if (gid != null) {
-            if (GSS.getById(gid)) {
-              removes.push("$" + gid);
-              trigger = true;
-              trigger_removesFromScope = true;
-            }
-          }
-        }
-      }
-      if (m.type === "characterData" || m.type === "attributes" || m.type === "childList") {
-        if (m.type === "characterData") {
-          target = m.target.parentElement;
-          gid = "$" + GSS.getId(m.target.parentElement);
-        } else {
-          gid = "$" + GSS.getId(m.target);
-        }
-        if (gid != null) {
-          if (invalidMeasures.indexOf(gid) === -1) {
-            trigger = true;
-            invalidMeasures.push(gid);
-          }
-        }
-      }
-    }
-    GSS._ids_killed(removes);
+  Engine.prototype.updateChildList = function() {
+    var el, globalRemoves, query, removedIds, removes, rid, selector, selectorsWithAdds, trigger, _i, _len, _ref;
     selectorsWithAdds = [];
-    _ref1 = this.queryCache;
-    for (selector in _ref1) {
-      query = _ref1[selector];
+    removes = [];
+    globalRemoves = [];
+    trigger = false;
+    _ref = this.queryCache;
+    for (selector in _ref) {
+      query = _ref[selector];
       query.update();
       if (query.changedLastUpdate) {
         if (query.lastAddedIds.length > 0) {
@@ -8454,65 +8861,41 @@ Engine = (function() {
         if (query.lastRemovedIds.length > 0) {
           trigger = true;
           removedIds = query.lastRemovedIds;
-          for (_k = 0, _len2 = removedIds.length; _k < _len2; _k++) {
-            rid = removedIds[_k];
-            rid = "$" + rid;
-            if (trigger_removesFromScope) {
-              if (removes.indexOf(rid) === -1) {
-                removes.push(selector + rid);
+          for (_i = 0, _len = removedIds.length; _i < _len; _i++) {
+            rid = removedIds[_i];
+            if (globalRemoves.indexOf(rid) === -1) {
+              el = GSS.getById(rid);
+              if (document.documentElement.contains(el)) {
+                globalRemoves.push(rid);
+                removes.push(selector + "$" + rid);
+              } else {
+                removes.push("$" + rid);
               }
-            } else {
-              removes.push(selector + rid);
             }
           }
         }
       }
-    }
-    /*
-    if trigger
-      e = new CustomEvent "solverinvalidated",
-        detail:
-          addsBySelector: addsBySelector
-          removesBySelector: removesBySelector
-          removesFromScope: removesFromScope
-          selectorsWithAdds: selectorsWithAdds
-          engine: @
-        bubbles: true
-        cancelable: true
-      @scope.dispatchEvent e
-    */
-
-    if (trigger) {
-      this.commander.handleRemoves(removes);
-      this.commander.handleSelectorsWithAdds(selectorsWithAdds);
-      this.commander.handleInvalidMeasures(invalidMeasures);
-      return this.solve();
+      GSS._ids_killed(globalRemoves);
+      if (trigger) {
+        this.commander.handleRemoves(removes);
+        this.commander.handleSelectorsWithAdds(selectorsWithAdds);
+      }
+      return trigger;
     }
   };
 
   Engine.prototype.measureByGssId = function(id, prop) {
-    var el;
-    LOG(this.id, ".measureByGssId()", this.workerCommands);
+    var el, val;
     el = GSS.getById(id);
-    return this.getter.measure(el, prop);
-  };
-
-  Engine.prototype.resetWorkerCommands = function() {
-    this.lastWorkerCommands = this.workerCommands;
-    return this.workerCommands = [];
+    val = this.getter.measure(el, prop);
+    LOG(this.id, ".measureByGssId()", id, prop, val);
+    return val;
   };
 
   Engine.prototype.handleWorkerMessage = function(message) {
     LOG(this.id, ".handleWorkerMessage()", this.workerCommands);
-    this.unobserve();
-    cleanAndSnatch(message.data.values, this.vars);
-    this.setter.set(this.vars);
-    this.observe();
-    console.timeEnd("boot")
-    console.timeEnd("run")
-    return this.dispatch("solved", {
-      values: this.vars
-    });
+    this.vars = message.data.values;
+    return this.display();
   };
 
   Engine.prototype.dispatch = function(eName, oDetail, bubbles, cancelable) {
@@ -8543,10 +8926,6 @@ Engine = (function() {
     throw new Error("" + event.message + " (" + event.filename + ":" + event.lineno + ")");
   };
 
-  Engine.prototype._addVarCommandsForElements = function(elements) {
-    return this.workerCommands.push("var", el.id + prop);
-  };
-
   Engine.prototype.registerCommands = function(commands) {
     var command, _i, _len, _results;
     _results = [];
@@ -8557,8 +8936,46 @@ Engine = (function() {
     return _results;
   };
 
+  Engine.prototype.handleRemoves = function(removes) {
+    var i, key, keys, tracker, _i, _j, _len, _len1, _results;
+    keys = null;
+    i = null;
+    _results = [];
+    for (_i = 0, _len = removes.length; _i < _len; _i++) {
+      tracker = removes[_i];
+      keys = this.varKeysByTacker[tracker];
+      if (keys) {
+        for (_j = 0, _len1 = keys.length; _j < _len1; _j++) {
+          key = keys[_j];
+          i = this.varKeys.indexOf(key);
+          if (i > -1) {
+            this.varKeys.splice(i, 1);
+          }
+        }
+      }
+      _results.push(this.varKeysByTacker[tracker] = null);
+    }
+    return _results;
+  };
+
   Engine.prototype.registerCommand = function(command) {
-    return this.workerCommands.push(command);
+    var key, tracker;
+    if (command[0] === 'var') {
+      key = command[1];
+      this.varKeys.push(key);
+      tracker = command[2];
+      if (tracker) {
+        if (!this.varKeysByTacker[tracker]) {
+          this.varKeysByTacker[tracker] = [];
+        }
+        this.varKeysByTacker[tracker].push(key);
+      }
+    } else if (command[0] === 'remove') {
+      this.handleRemoves.apply(this, command.slice(1, command.length));
+    }
+    this.workerCommands.push(command);
+    this.setNeedsLayout(true);
+    return this;
   };
 
   Engine.prototype.registerDomQuery = function(o) {
@@ -8567,7 +8984,6 @@ Engine = (function() {
     if (this.queryCache[selector] != null) {
       return this.queryCache[selector];
     } else {
-      this.observe();
       query = new GSS.Query(o);
       query.update();
       this.queryCache[selector] = query;
@@ -8577,22 +8993,7 @@ Engine = (function() {
 
   return Engine;
 
-})();
-
-/*
-Engine::loadAllASTs = () ->
-  @ASTs = @getter.readAllASTs()
-
-Engine::addAST = (ast) ->
-  @ASTs.push ast
-  @run ast  
-
-Engine::removeAST = (ast) ->  
-  @clean()
-  @ASTs.splice @ASTs.indexOf(ast), 1
-  @run @ASTs
-*/
-
+})(GSS.EventTrigger);
 
 module.exports = Engine;
 
@@ -8686,7 +9087,7 @@ Commander = (function() {
     this.spawnForWindowSize = __bind(this.spawnForWindowSize, this);
     this._execute = __bind(this._execute, this);
     this._checkCache = __bind(this._checkCache, this);
-    this.lazySpawnForWindowSize = this.spawnForWindowSize;
+    this.lazySpawnForWindowSize = GSS._.debounce(this.spawnForWindowSize, GSS.config.resizeDebounce, false);
     this.cleanVars();
   }
 
@@ -8808,6 +9209,47 @@ Commander = (function() {
     }
   };
 
+  Commander.prototype.parentEngineWithVarId = function(key) {
+    var parentEngine;
+    parentEngine = this.engine.parentEngine;
+    while (parentEngine) {
+      if (parentEngine.varKeys.indexOf(key) > -1) {
+        return parentEngine;
+      }
+      parentEngine = parentEngine.parentEngine;
+    }
+    return null;
+  };
+
+  Commander.prototype.spawnForScope = function(prop) {
+    var framingEngine, key,
+      _this = this;
+    key = "$" + GSS.getId(this.engine.scope) + ("[" + prop + "]");
+    framingEngine = this.parentEngineWithVarId(key);
+    if (framingEngine) {
+      return framingEngine.on("beforeDisplay", function() {
+        var val;
+        val = framingEngine.vars[key];
+        return _this.engine.registerCommand(['suggest', ['get', key], ['number', val], 'required']);
+      });
+    }
+  };
+
+  Commander.prototype.bindToScope = function(prop) {
+    return this.spawnForScope(prop);
+    /*
+    if prop is 'width' or prop is 'height'
+      if prop is 'width' then @spawnForScopeWidth() else @spawnForScopeHeight()
+    else if prop is 'x'
+      @engine.registerCommand ['eq', ['get', '::scope[x]'], ['number', 0], 'required']      
+    else if prop is 'y'
+      @engine.registerCommand ['eq', ['get', '::scope[y]'], ['number', 0], 'required']
+    #else
+    #  throw new Error "Not sure how to bind to window prop: #{prop}"
+    */
+
+  };
+
   Commander.prototype.registerSpawn = function(root, varid, prop, intrinsicQuery, checkInstrinsics) {
     if (!root._is_bound) {
       return this.engine.registerCommand(root);
@@ -8860,6 +9302,15 @@ Commander = (function() {
     return this;
   };
 
+  Commander.prototype.validateMeasures = function() {
+    var id, ids;
+    ids = [];
+    for (id in this.intrinsicRegistersById) {
+      ids.push(id);
+    }
+    return this.handleInvalidMeasures(ids);
+  };
+
   Commander.prototype.handleInvalidMeasures = function(invalidMeasures) {
     var id, prop, register, registersByProp, _i, _len;
     if (invalidMeasures.length < 1) {
@@ -8885,16 +9336,20 @@ Commander = (function() {
       prop = root._prop;
       if (prop.indexOf("intrinsic-") === 0) {
         root._intrinsicQuery.lastAddedIds.forEach(function(id) {
-          var gid, register;
+          var elProp, gid, k, register;
           gid = "$" + id;
           if (!_this.intrinsicRegistersById[gid]) {
             _this.intrinsicRegistersById[gid] = {};
           }
           if (!_this.intrinsicRegistersById[gid][prop]) {
+            elProp = prop.split("intrinsic-")[1];
+            k = "" + gid + "[" + prop + "]";
             register = function() {
               var val;
-              val = this.engine.measureByGssId(id, prop.split("intrinsic-")[1]);
-              return this.engine.registerCommand(['suggest', ['get', "" + gid + "[" + prop + "]"], ['number', val], 'required']);
+              val = this.engine.measureByGssId(id, elProp);
+              if (this.engine.vars[k] !== val) {
+                return this.engine.registerCommand(['suggest', ['get', k], ['number', val], 'required']);
+              }
             };
             _this.intrinsicRegistersById[gid][prop] = register;
             return register.call(_this);
@@ -8955,9 +9410,13 @@ Commander = (function() {
       self.push("%%" + query.selector + "%%");
     }
     this.registerSpawn(self, varId, prop, query, true);
-    if (query === 'window') {
-      this.bindToWindow(prop);
-      return query = null;
+    if (query) {
+      if (query === 'window') {
+        this.bindToWindow(prop);
+        return query = null;
+      } else if (query.__is_scope) {
+        return this.bindToScope(prop);
+      }
     }
   };
 
@@ -9079,17 +9538,19 @@ Commander = (function() {
     query = null;
     if (sel === 'window') {
       return 'window';
-    } else if (sel === 'this') {
+    } else if (sel === 'this' || sel === 'scope') {
       engine = this.engine;
       query = this.engine.registerDomQuery({
-        selector: "::" + "this",
+        selector: "::" + sel,
         isMulti: false,
         isLive: true,
         createNodeList: function() {
           return [engine.scope];
         }
       });
+      query.__is_scope = true;
       bindRoot(root, query);
+      return query;
     } else {
       throw new Error("$reserved selectors not yet handled: " + sel);
     }
@@ -9214,6 +9675,14 @@ Getter = (function() {
     return ASTs;
   };
 
+  Getter.prototype.scopeFor = function(node) {
+    if (this.isStyleNode(node)) {
+      return this.scopeForStyleNode(node);
+    } else {
+      return this.nearestScope(node);
+    }
+  };
+
   Getter.prototype.isStyleNode = function(node) {
     var mime;
     if ((node != null ? node.tagName : void 0) === "STYLE") {
@@ -9225,8 +9694,44 @@ Getter = (function() {
     return false;
   };
 
-  Getter.prototype.getEngineScopeForStyleNode = function(node) {
+  Getter.prototype.scopeForStyleNode = function(node) {
     return node.parentElement;
+  };
+
+  Getter.prototype.isScope = function(el) {
+    return !!(el != null ? el._gss_is_scope : void 0);
+  };
+
+  Getter.prototype.nearestScope = function(el, skipSelf) {
+    if (skipSelf == null) {
+      skipSelf = false;
+    }
+    if (skipSelf) {
+      el = el.parentElement;
+    }
+    while (el.parentElement) {
+      if (this.isScope(el)) {
+        return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  };
+
+  Getter.prototype.nearestEngine = function(el, skipSelf) {
+    var scope;
+    if (skipSelf == null) {
+      skipSelf = false;
+    }
+    scope = this.nearestScope(el, skipSelf);
+    if (scope) {
+      return this.engine(scope);
+    }
+    return null;
+  };
+
+  Getter.prototype.engine = function(el) {
+    return GSS.engines.byId[GSS.getId(el)];
   };
 
   Getter.prototype.readAST = function(node) {
@@ -9286,6 +9791,9 @@ Setter = (function() {
 
   Setter.prototype.set = function(vars) {
     var dimension, element, gid, key, val, _results;
+    if (GSS.config.processBeforeSet) {
+      vars = GSS.config.processBeforeSet(vars);
+    }
     _results = [];
     for (key in vars) {
       val = vars[key];
@@ -9294,6 +9802,9 @@ Setter = (function() {
         dimension = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
         element = GSS.getById(gid);
         if (element) {
+          if (GSS.config.roundBeforeSet) {
+            val = Math.round(val);
+          }
           _results.push(this.elementSet(element, dimension, val));
         } else {
           _results.push(console.log("Element wasn't found"));
@@ -9331,6 +9842,12 @@ Setter = (function() {
 
   Setter.prototype.getOffsets = function(element) {
     var offsets;
+    if (!GSS.config.useOffsetParent) {
+      return {
+        x: 0,
+        y: 0
+      };
+    }
     offsets = {
       x: 0,
       y: 0
@@ -9439,7 +9956,7 @@ IdMixin = {
       el.style['box-sizing'] = 'border-box';
       el._gss_id = gid;
       if (this._byIdCache[gid] != null) {
-        throw new Error("Only one element can have a given gss-id: " + gid);
+        GSS.warn("element by id cache replaced gss-id: " + gid);
       }
     }
     this._byIdCache[gid] = el;
@@ -9449,9 +9966,6 @@ IdMixin = {
     if (el != null ? el._gss_id : void 0) {
       return el != null ? el._gss_id : void 0;
     }
-    if ((el != null ? el.getAttribute : void 0) != null) {
-      return el.getAttribute('data-gss-id');
-    }
     return null;
   }
 };
@@ -9459,13 +9973,18 @@ IdMixin = {
 module.exports = IdMixin;
 
 });
-require.register("the-gss-engine/lib/WorkerBlobUrl.js", function(exports, require, module){
-module.exports = window.URL.createObjectURL(new Blob(["(function(){!function(a){\"use strict\";try{!function(){}.bind(a)}catch(b){Object.defineProperty(Function.prototype,\"bind\",{value:function(a){var b=this;return function(){return b.apply(a,arguments)}},enumerable:!1,configurable:!0,writable:!0})}var c=\"undefined\"!=typeof a.HTMLElement,d=function(a){for(var b=null;a&&a!=Object.prototype;){if(a.tagName){b=a.tagName;break}a=a.prototype}return b||\"div\"},e=1e-8,f={},g=function(a,b){if(a&&b){if(\"function\"==typeof a[b])return a[b];var c=a.prototype;if(c&&\"function\"==typeof c[b])return c[b];if(c!==Object.prototype&&c!==Function.prototype)return\"function\"==typeof a.__super__?g(a.__super__,b):void 0}},h=a.c=function(){return h._api?h._api.apply(this,arguments):void 0};h.debug=!1,h.trace=!1,h.verbose=!1,h.traceAdded=!1,h.GC=!1,h.GEQ=1,h.LEQ=2,h.inherit=function(b){var e=null,g=null;b[\"extends\"]&&(g=b[\"extends\"],delete b[\"extends\"]),b.initialize&&(e=b.initialize,delete b.initialize);var i=e||function(){};Object.defineProperty(i,\"__super__\",{value:g?g:Object,enumerable:!1,configurable:!0,writable:!1}),b._t&&(f[b._t]=i);var j=i.prototype=Object.create(g?g.prototype:Object.prototype);if(h.extend(j,b),c&&g&&g.prototype instanceof a.HTMLElement){var k=i,l=d(j),m=function(a){return a.__proto__=j,k.apply(a,arguments),j.created&&a.created(),j.decorate&&a.decorate(),a};this.extend(j,{upgrade:m}),i=function(){return m(a.document.createElement(l))},i.prototype=j,this.extend(i,{ctor:k})}return i},h.own=function(b,c,d){return Object.getOwnPropertyNames(b).forEach(c,d||a),b},h.extend=function(a,b){return h.own(b,function(c){var d=Object.getOwnPropertyDescriptor(b,c);try{\"function\"==typeof d.get||\"function\"==typeof d.set?Object.defineProperty(a,c,d):\"function\"==typeof d.value||\"_\"===c.charAt(0)?(d.writable=!0,d.configurable=!0,d.enumerable=!1,Object.defineProperty(a,c,d)):a[c]=b[c]}catch(e){}}),a},h.traceprint=function(a){h.verbose&&console.log(a)},h.fnenterprint=function(a){console.log(\"* \"+a)},h.fnexitprint=function(a){console.log(\"- \"+a)},h.assert=function(a,b){if(!a)throw new h.InternalError(\"Assertion failed: \"+b)},h.plus=function(a,b){return a instanceof h.Expression||(a=new h.Expression(a)),b instanceof h.Expression||(b=new h.Expression(b)),a.plus(b)},h.minus=function(a,b){return a instanceof h.Expression||(a=new h.Expression(a)),b instanceof h.Expression||(b=new h.Expression(b)),a.minus(b)},h.times=function(a,b){return(\"number\"==typeof a||a instanceof h.Variable)&&(a=new h.Expression(a)),(\"number\"==typeof b||b instanceof h.Variable)&&(b=new h.Expression(b)),a.times(b)},h.divide=function(a,b){return(\"number\"==typeof a||a instanceof h.Variable)&&(a=new h.Expression(a)),(\"number\"==typeof b||b instanceof h.Variable)&&(b=new h.Expression(b)),a.divide(b)},h.approx=function(a,b){if(a===b)return!0;var c,d;return c=a instanceof h.Variable?a.value:a,d=b instanceof h.Variable?b.value:b,0==c?Math.abs(d)<e:0==d?Math.abs(c)<e:Math.abs(c-d)<Math.abs(c)*e};var i=0;h._inc=function(){return i++},h.parseJSON=function(a){return JSON.parse(a,function(a,b){if(\"object\"!=typeof b||\"string\"!=typeof b._t)return b;var c=b._t,d=f[c];if(c&&d){var e=g(d,\"fromJSON\");if(e)return e(b,d)}return b})},\"function\"==typeof require&&\"undefined\"!=typeof module&&\"undefined\"==typeof load&&(a.exports=h)}(this),function(a){\"use strict\";var b=function(a){var b=a.hashCode?a.hashCode:a.toString();return b},c=function(a,b){Object.keys(a).forEach(function(c){b[c]=a[c]})},d={};a.HashTable=a.inherit({initialize:function(){this.size=0,this._store={},this._keyStrMap={},this._deleted=0},set:function(a,c){var d=b(a);this._store.hasOwnProperty(d)||this.size++,this._store[d]=c,this._keyStrMap[d]=a},get:function(a){if(!this.size)return null;a=b(a);var c=this._store[a];return\"undefined\"!=typeof c?this._store[a]:null},clear:function(){this.size=0,this._store={},this._keyStrMap={}},_compact:function(){var a={};c(this._store,a),this._store=a},_compactThreshold:100,_perhapsCompact:function(){this._size>64||this._deleted>this._compactThreshold&&(this._compact(),this._deleted=0)},\"delete\":function(a){a=b(a),this._store.hasOwnProperty(a)&&(this._deleted++,delete this._store[a],this.size>0&&this.size--)},each:function(a,b){if(this.size){this._perhapsCompact();var c=this._store,d=this._keyStrMap;Object.keys(this._store).forEach(function(e){a.call(b||null,d[e],c[e])},this)}},escapingEach:function(a,b){if(this.size){this._perhapsCompact();for(var c=this,e=this._store,f=this._keyStrMap,g=d,h=Object.keys(e),i=0;i<h.length;i++)if(function(d){c._store.hasOwnProperty(d)&&(g=a.call(b||null,f[d],e[d]))}(h[i]),g){if(void 0!==g.retval)return g;if(g.brk)break}}},clone:function(){var b=new a.HashTable;return this.size&&(b.size=this.size,c(this._store,b._store),c(this._keyStrMap,b._keyStrMap)),b},equals:function(b){if(b===this)return!0;if(!(b instanceof a.HashTable)||b._size!==this._size)return!1;for(var c=Object.keys(this._store),d=0;d<c.length;d++){var e=c[d];if(this._keyStrMap[e]!==b._keyStrMap[e]||this._store[e]!==b._store[e])return!1}return!0},toString:function(){var a=\"\";return this.each(function(b,c){a+=b+\" => \"+c+\"\\n\"}),a}})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.HashSet=a.inherit({_t:\"c.HashSet\",initialize:function(){this.storage=[],this.size=0},add:function(a){var b=this.storage;b.indexOf(a),-1==b.indexOf(a)&&b.push(a),this.size=this.storage.length},values:function(){return this.storage},has:function(a){var b=this.storage;return-1!=b.indexOf(a)},\"delete\":function(a){var b=this.storage.indexOf(a);return-1==b?null:(this.storage.splice(b,1)[0],this.size=this.storage.length,void 0)},clear:function(){this.storage.length=0},each:function(a,b){this.size&&this.storage.forEach(a,b)},escapingEach:function(a,b){this.size&&this.storage.forEach(a,b)},toString:function(){var a=this.size+\" {\",b=!0;return this.each(function(c){b?b=!1:a+=\", \",a+=c}),a+=\"}\\n\"},toJSON:function(){var a=[];return this.each(function(b){a.push(b.toJSON())}),{_t:\"c.HashSet\",data:a}},fromJSON:function(b){var c=new a.HashSet;return b.data&&(c.size=b.data.length,c.storage=b.data),c}})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.Error=a.inherit({initialize:function(a){a&&(this._description=a)},_name:\"c.Error\",_description:\"An error has occured in Cassowary\",set description(a){this._description=a},get description(){return\"(\"+this._name+\") \"+this._description},get message(){return this.description},toString:function(){return this.description}});var b=function(b,c){return a.inherit({\"extends\":a.Error,initialize:function(){a.Error.apply(this,arguments)},_name:b||\"\",_description:c||\"\"})};a.ConstraintNotFound=b(\"c.ConstraintNotFound\",\"Tried to remove a constraint never added to the tableu\"),a.InternalError=b(\"c.InternalError\"),a.NonExpression=b(\"c.NonExpression\",\"The resulting expression would be non\"),a.NotEnoughStays=b(\"c.NotEnoughStays\",\"There are not enough stays to give specific values to every variable\"),a.RequiredFailure=b(\"c.RequiredFailure\",\"A required constraint cannot be satisfied\"),a.TooDifficult=b(\"c.TooDifficult\",\"The constraints are too difficult to solve\")}(this.c||module.parent.exports||{}),function(a){\"use strict\";var b=1e3;a.SymbolicWeight=a.inherit({_t:\"c.SymbolicWeight\",initialize:function(){this.value=0;for(var a=1,c=arguments.length-1;c>=0;--c)this.value+=arguments[c]*a,a*=b},toJSON:function(){return{_t:this._t,value:this.value}}})}(this.c||module.parent.exports||{}),function(a){a.Strength=a.inherit({initialize:function(b,c,d,e){this.name=b,this.symbolicWeight=c instanceof a.SymbolicWeight?c:new a.SymbolicWeight(c,d,e)},get required(){return this===a.Strength.required},toString:function(){return this.name+(this.isRequired?\"\":\":\"+this.symbolicWeight)}}),a.Strength.required=new a.Strength(\"<Required>\",1e3,1e3,1e3),a.Strength.strong=new a.Strength(\"strong\",1,0,0),a.Strength.medium=new a.Strength(\"medium\",0,1,0),a.Strength.weak=new a.Strength(\"weak\",0,0,1)}(this.c||(\"undefined\"!=typeof module?module.parent.exports.c:{})),function(a){\"use strict\";a.AbstractVariable=a.inherit({isDummy:!1,isExternal:!1,isPivotable:!1,isRestricted:!1,_init:function(b,c){this.hashCode=a._inc(),this.name=(c||\"\")+this.hashCode,b&&(\"undefined\"!=typeof b.name&&(this.name=b.name),\"undefined\"!=typeof b.value&&(this.value=b.value),\"undefined\"!=typeof b.prefix&&(this._prefix=b.prefix))},_prefix:\"\",name:\"\",value:0,toJSON:function(){var a={};return this._t&&(a._t=this._t),this.name&&(a.name=this.name),\"undefined\"!=typeof this.value&&(a.value=this.value),this._prefix&&(a._prefix=this._prefix),this._t&&(a._t=this._t),a},fromJSON:function(b,c){var d=new c;return a.extend(d,b),d},toString:function(){return this._prefix+\"[\"+this.name+\":\"+this.value+\"]\"}}),a.Variable=a.inherit({_t:\"c.Variable\",\"extends\":a.AbstractVariable,initialize:function(b){this._init(b,\"v\");var c=a.Variable._map;c&&(c[this.name]=this)},isExternal:!0}),a.DummyVariable=a.inherit({_t:\"c.DummyVariable\",\"extends\":a.AbstractVariable,initialize:function(a){this._init(a,\"d\")},isDummy:!0,isRestricted:!0,value:\"dummy\"}),a.ObjectiveVariable=a.inherit({_t:\"c.ObjectiveVariable\",\"extends\":a.AbstractVariable,initialize:function(a){this._init(a,\"o\")},value:\"obj\"}),a.SlackVariable=a.inherit({_t:\"c.SlackVariable\",\"extends\":a.AbstractVariable,initialize:function(a){this._init(a,\"s\")},isPivotable:!0,isRestricted:!0,value:\"slack\"})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.Point=a.inherit({initialize:function(b,c,d){if(b instanceof a.Variable)this._x=b;else{var e={value:b};d&&(e.name=\"x\"+d),this._x=new a.Variable(e)}if(c instanceof a.Variable)this._y=c;else{var f={value:c};d&&(f.name=\"y\"+d),this._y=new a.Variable(f)}},get x(){return this._x},set x(b){b instanceof a.Variable?this._x=b:this._x.value=b},get y(){return this._y},set y(b){b instanceof a.Variable?this._y=b:this._y.value=b},toString:function(){return\"(\"+this.x+\", \"+this.y+\")\"}})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.Expression=a.inherit({initialize:function(b,c,d){a.GC&&console.log(\"new c.Expression\"),this.constant=\"number\"!=typeof d||isNaN(d)?0:d,this.terms=new a.HashTable,b instanceof a.AbstractVariable?this.setVariable(b,\"number\"==typeof c?c:1):\"number\"==typeof b&&(isNaN(b)?console.trace():this.constant=b)},initializeFromHash:function(b,c){return a.verbose&&(console.log(\"*******************************\"),console.log(\"clone c.initializeFromHash\"),console.log(\"*******************************\")),a.GC&&console.log(\"clone c.Expression\"),this.constant=b,this.terms=c.clone(),this},multiplyMe:function(a){this.constant*=a;var b=this.terms;return b.each(function(c,d){b.set(c,d*a)}),this},clone:function(){a.verbose&&(console.log(\"*******************************\"),console.log(\"clone c.Expression\"),console.log(\"*******************************\"));var b=new a.Expression;return b.initializeFromHash(this.constant,this.terms),b},times:function(b){if(\"number\"==typeof b)return this.clone().multiplyMe(b);if(this.isConstant)return b.times(this.constant);if(b.isConstant)return this.times(b.constant);throw new a.NonExpression},plus:function(b){return b instanceof a.Expression?this.clone().addExpression(b,1):b instanceof a.Variable?this.clone().addVariable(b,1):void 0},minus:function(b){return b instanceof a.Expression?this.clone().addExpression(b,-1):b instanceof a.Variable?this.clone().addVariable(b,-1):void 0},divide:function(b){if(\"number\"==typeof b){if(a.approx(b,0))throw new a.NonExpression;return this.times(1/b)}if(b instanceof a.Expression){if(!b.isConstant)throw new a.NonExpression;return this.times(1/b.constant)}},addExpression:function(b,c,d,e){return b instanceof a.AbstractVariable&&(b=new a.Expression(b),a.trace&&console.log(\"addExpression: Had to cast a var to an expression\")),c=c||1,this.constant+=c*b.constant,b.terms.each(function(a,b){this.addVariable(a,b*c,d,e)},this),this},addVariable:function(b,c,d,e){null==c&&(c=1),a.trace&&console.log(\"c.Expression::addVariable():\",b,c);var f=this.terms.get(b);if(f){var g=f+c;0==g||a.approx(g,0)?(e&&e.noteRemovedVariable(b,d),this.terms.delete(b)):this.setVariable(b,g)}else a.approx(c,0)||(this.setVariable(b,c),e&&e.noteAddedVariable(b,d));return this},setVariable:function(a,b){return this.terms.set(a,b),this},anyPivotableVariable:function(){if(this.isConstant)throw new a.InternalError(\"anyPivotableVariable called on a constant\");var b=this.terms.escapingEach(function(a){return a.isPivotable?{retval:a}:void 0});return b&&void 0!==b.retval?b.retval:null},substituteOut:function(b,c,d,e){a.trace&&(a.fnenterprint(\"CLE:substituteOut: \"+b+\", \"+c+\", \"+d+\", ...\"),a.traceprint(\"this = \"+this));var f=this.setVariable.bind(this),g=this.terms,h=g.get(b);g.delete(b),this.constant+=h*c.constant,c.terms.each(function(b,c){var i=g.get(b);if(i){var j=i+h*c;a.approx(j,0)?(e.noteRemovedVariable(b,d),g.delete(b)):f(b,j)}else f(b,h*c),e&&e.noteAddedVariable(b,d)}),a.trace&&a.traceprint(\"Now this is \"+this)},changeSubject:function(a,b){this.setVariable(a,this.newSubject(b))},newSubject:function(b){a.trace&&a.fnenterprint(\"newSubject:\"+b);var c=1/this.terms.get(b);return this.terms.delete(b),this.multiplyMe(-c),c},coefficientFor:function(a){return this.terms.get(a)||0},get isConstant(){return 0==this.terms.size},toString:function(){var b=\"\",c=!1;if(!a.approx(this.constant,0)||this.isConstant){if(b+=this.constant,this.isConstant)return b;c=!0}return this.terms.each(function(a,d){c&&(b+=\" + \"),b+=d+\"*\"+a,c=!0}),b},equals:function(b){return b===this?!0:b instanceof a.Expression&&b.constant===this.constant&&b.terms.equals(this.terms)},Plus:function(a,b){return a.plus(b)},Minus:function(a,b){return a.minus(b)},Times:function(a,b){return a.times(b)},Divide:function(a,b){return a.divide(b)}})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.AbstractConstraint=a.inherit({initialize:function(b,c){this.hashCode=a._inc(),this.strength=b||a.Strength.required,this.weight=c||1},isEditConstraint:!1,isInequality:!1,isStayConstraint:!1,get required(){return this.strength===a.Strength.required},toString:function(){return this.strength+\" {\"+this.weight+\"} (\"+this.expression+\")\"}});var b=a.AbstractConstraint.prototype.toString,c=function(b,c,d){a.AbstractConstraint.call(this,c||a.Strength.strong,d),this.variable=b,this.expression=new a.Expression(b,-1,b.value)};a.EditConstraint=a.inherit({\"extends\":a.AbstractConstraint,initialize:function(){c.apply(this,arguments)},isEditConstraint:!0,toString:function(){return\"edit:\"+b.call(this)}}),a.StayConstraint=a.inherit({\"extends\":a.AbstractConstraint,initialize:function(){c.apply(this,arguments)},isStayConstraint:!0,toString:function(){return\"stay:\"+b.call(this)}});var d=a.Constraint=a.inherit({\"extends\":a.AbstractConstraint,initialize:function(b,c,d){a.AbstractConstraint.call(this,c,d),this.expression=b}});a.Inequality=a.inherit({\"extends\":a.Constraint,_cloneOrNewCle:function(b){return b.clone?b.clone():new a.Expression(b)},initialize:function(b,c,e,f,g){var h=b instanceof a.Expression,i=e instanceof a.Expression,j=b instanceof a.AbstractVariable,k=e instanceof a.AbstractVariable,l=\"number\"==typeof b,m=\"number\"==typeof e;if((h||l)&&k){var n=b,o=c,p=e,q=f,r=g;if(d.call(this,this._cloneOrNewCle(n),q,r),o==a.LEQ)this.expression.multiplyMe(-1),this.expression.addVariable(p);else{if(o!=a.GEQ)throw new a.InternalError(\"Invalid operator in c.Inequality constructor\");this.expression.addVariable(p,-1)}}else if(j&&(i||m)){var n=e,o=c,p=b,q=f,r=g;if(d.call(this,this._cloneOrNewCle(n),q,r),o==a.GEQ)this.expression.multiplyMe(-1),this.expression.addVariable(p);else{if(o!=a.LEQ)throw new a.InternalError(\"Invalid operator in c.Inequality constructor\");this.expression.addVariable(p,-1)}}else{if(h&&m){var s=b,o=c,t=e,q=f,r=g;if(d.call(this,this._cloneOrNewCle(s),q,r),o==a.LEQ)this.expression.multiplyMe(-1),this.expression.addExpression(this._cloneOrNewCle(t));else{if(o!=a.GEQ)throw new a.InternalError(\"Invalid operator in c.Inequality constructor\");this.expression.addExpression(this._cloneOrNewCle(t),-1)}return this}if(l&&i){var s=e,o=c,t=b,q=f,r=g;if(d.call(this,this._cloneOrNewCle(s),q,r),o==a.GEQ)this.expression.multiplyMe(-1),this.expression.addExpression(this._cloneOrNewCle(t));else{if(o!=a.LEQ)throw new a.InternalError(\"Invalid operator in c.Inequality constructor\");this.expression.addExpression(this._cloneOrNewCle(t),-1)}return this}if(h&&i){var s=b,o=c,t=e,q=f,r=g;if(d.call(this,this._cloneOrNewCle(t),q,r),o==a.GEQ)this.expression.multiplyMe(-1),this.expression.addExpression(this._cloneOrNewCle(s));else{if(o!=a.LEQ)throw new a.InternalError(\"Invalid operator in c.Inequality constructor\");this.expression.addExpression(this._cloneOrNewCle(s),-1)}}else{if(h)return d.call(this,b,c,e);if(c==a.GEQ)d.call(this,new a.Expression(e),f,g),this.expression.multiplyMe(-1),this.expression.addVariable(b);else{if(c!=a.LEQ)throw new a.InternalError(\"Invalid operator in c.Inequality constructor\");d.call(this,new a.Expression(e),f,g),this.expression.addVariable(b,-1)}}}},isInequality:!0,toString:function(){return d.prototype.toString.call(this)+\" >= 0) id: \"+this.hashCode}}),a.Equation=a.inherit({\"extends\":a.Constraint,initialize:function(b,c,e,f){if(b instanceof a.Expression&&!c||c instanceof a.Strength)d.call(this,b,c,e);else if(b instanceof a.AbstractVariable&&c instanceof a.Expression){var g=b,h=c,i=e,j=f;d.call(this,h.clone(),i,j),this.expression.addVariable(g,-1)}else if(b instanceof a.AbstractVariable&&\"number\"==typeof c){var g=b,k=c,i=e,j=f;d.call(this,new a.Expression(k),i,j),this.expression.addVariable(g,-1)}else if(b instanceof a.Expression&&c instanceof a.AbstractVariable){var h=b,g=c,i=e,j=f;d.call(this,h.clone(),i,j),this.expression.addVariable(g,-1)}else{if(!(b instanceof a.Expression||b instanceof a.AbstractVariable||\"number\"==typeof b)||!(c instanceof a.Expression||c instanceof a.AbstractVariable||\"number\"==typeof c))throw\"Bad initializer to c.Equation\";b=b instanceof a.Expression?b.clone():new a.Expression(b),c=c instanceof a.Expression?c.clone():new a.Expression(c),d.call(this,b,e,f),this.expression.addExpression(c,-1)}a.assert(this.strength instanceof a.Strength,\"_strength not set\")},toString:function(){return d.prototype.toString.call(this)+\" = 0)\"}})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.EditInfo=a.inherit({initialize:function(a,b,c,d,e){this.constraint=a,this.editPlus=b,this.editMinus=c,this.prevEditConstant=d,this.index=e},toString:function(){return\"<cn=\"+this.constraint+\", ep=\"+this.editPlus+\", em=\"+this.editMinus+\", pec=\"+this.prevEditConstant+\", index=\"+this.index+\">\"}})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.Tableau=a.inherit({initialize:function(){this.columns=new a.HashTable,this.rows=new a.HashTable,this._infeasibleRows=new a.HashSet,this._externalRows=new a.HashSet,this._externalParametricVars=new a.HashSet},noteRemovedVariable:function(b,c){a.trace&&console.log(\"c.Tableau::noteRemovedVariable: \",b,c);var d=this.columns.get(b);c&&d&&d.delete(c)},noteAddedVariable:function(a,b){b&&this.insertColVar(a,b)},getInternalInfo:function(){var a=\"Tableau Information:\\n\";return a+=\"Rows: \"+this.rows.size,a+=\" (= \"+(this.rows.size-1)+\" constraints)\",a+=\"\\nColumns: \"+this.columns.size,a+=\"\\nInfeasible Rows: \"+this._infeasibleRows.size,a+=\"\\nExternal basic variables: \"+this._externalRows.size,a+=\"\\nExternal parametric variables: \",a+=this._externalParametricVars.size,a+=\"\\n\"},toString:function(){var a=\"Tableau:\\n\";return this.rows.each(function(b,c){a+=b,a+=\" <==> \",a+=c,a+=\"\\n\"}),a+=\"\\nColumns:\\n\",a+=this.columns,a+=\"\\nInfeasible rows: \",a+=this._infeasibleRows,a+=\"External basic variables: \",a+=this._externalRows,a+=\"External parametric variables: \",a+=this._externalParametricVars},insertColVar:function(b,c){var d=this.columns.get(b);d||(d=new a.HashSet,this.columns.set(b,d)),d.add(c)},addRow:function(b,c){a.trace&&a.fnenterprint(\"addRow: \"+b+\", \"+c),this.rows.set(b,c),c.terms.each(function(a){this.insertColVar(a,b),a.isExternal&&this._externalParametricVars.add(a)},this),b.isExternal&&this._externalRows.add(b),a.trace&&a.traceprint(this.toString())},removeColumn:function(b){a.trace&&a.fnenterprint(\"removeColumn:\"+b);var c=this.columns.get(b);c?(this.columns.delete(b),c.each(function(a){var c=this.rows.get(a);c.terms.delete(b)},this)):a.trace&&console.log(\"Could not find var\",b,\"in columns\"),b.isExternal&&(this._externalRows.delete(b),this._externalParametricVars.delete(b))},removeRow:function(b){a.trace&&a.fnenterprint(\"removeRow:\"+b);var c=this.rows.get(b);return a.assert(null!=c),c.terms.each(function(c){var d=this.columns.get(c);null!=d&&(a.trace&&console.log(\"removing from varset:\",b),d.delete(b))},this),this._infeasibleRows.delete(b),b.isExternal&&this._externalRows.delete(b),this.rows.delete(b),a.trace&&a.fnexitprint(\"returning \"+c),c},substituteOut:function(b,c){a.trace&&a.fnenterprint(\"substituteOut:\"+b+\", \"+c),a.trace&&a.traceprint(this.toString());var d=this.columns.get(b);d.each(function(a){var d=this.rows.get(a);d.substituteOut(b,c,a,this),a.isRestricted&&d.constant<0&&this._infeasibleRows.add(a)},this),b.isExternal&&(this._externalRows.add(b),this._externalParametricVars.delete(b)),this.columns.delete(b)},columnsHasKey:function(a){return!!this.columns.get(a)}})}(this.c||module.parent.exports||{}),function(a){var b=a.Tableau,c=b.prototype,d=1e-8,e=a.Strength.weak;a.SimplexSolver=a.inherit({\"extends\":a.Tableau,initialize:function(){a.Tableau.call(this),this._stayMinusErrorVars=[],this._stayPlusErrorVars=[],this._errorVars=new a.HashTable,this._markerVars=new a.HashTable,this._objective=new a.ObjectiveVariable({name:\"Z\"}),this._editVarMap=new a.HashTable,this._editVarList=[],this._slackCounter=0,this._artificialCounter=0,this._dummyCounter=0,this.autoSolve=!0,this._fNeedsSolving=!1,this._optimizeCount=0,this.rows.set(this._objective,new a.Expression),this._stkCedcns=[0],a.trace&&a.traceprint(\"objective expr == \"+this.rows.get(this._objective))},addLowerBound:function(b,c){var d=new a.Inequality(b,a.GEQ,new a.Expression(c));return this.addConstraint(d)},addUpperBound:function(b,c){var d=new a.Inequality(b,a.LEQ,new a.Expression(c));return this.addConstraint(d)},addBounds:function(a,b,c){return this.addLowerBound(a,b),this.addUpperBound(a,c),this},add:function(){for(var a=0;a<arguments.length;a++)this.addConstraint(arguments[a]);return this},addConstraint:function(b){a.trace&&a.fnenterprint(\"addConstraint: \"+b);var c=new Array(2),d=new Array(1),e=this.newExpression(b,c,d);if(d=d[0],this.tryAddingDirectly(e)||this.addWithArtificialVariable(e),this._fNeedsSolving=!0,b.isEditConstraint){var f=this._editVarMap.size,g=c[0],h=c[1];!g instanceof a.SlackVariable&&console.warn(\"cvEplus not a slack variable =\",g),!h instanceof a.SlackVariable&&console.warn(\"cvEminus not a slack variable =\",h),a.debug&&console.log(\"new c.EditInfo(\"+b+\", \"+g+\", \"+h+\", \"+d+\", \"+f+\")\");var i=new a.EditInfo(b,g,h,d,f);this._editVarMap.set(b.variable,i),this._editVarList[f]={v:b.variable,info:i}}return this.autoSolve&&(this.optimize(this._objective),this._setExternalVariables()),this},addConstraintNoException:function(b){a.trace&&a.fnenterprint(\"addConstraintNoException: \"+b);try{return this.addConstraint(b),!0}catch(c){return!1}},addEditVar:function(b,c,d){return a.trace&&a.fnenterprint(\"addEditVar: \"+b+\" @ \"+c+\" {\"+d+\"}\"),this.addConstraint(new a.EditConstraint(b,c||a.Strength.strong,d))},beginEdit:function(){return a.assert(this._editVarMap.size>0,\"_editVarMap.size > 0\"),this._infeasibleRows.clear(),this._resetStayConstants(),this._stkCedcns.push(this._editVarMap.size),this},endEdit:function(){return a.assert(this._editVarMap.size>0,\"_editVarMap.size > 0\"),this.resolve(),this._stkCedcns.pop(),this.removeEditVarsTo(this._stkCedcns[this._stkCedcns.length-1]),this},removeAllEditVars:function(){return this.removeEditVarsTo(0)},removeEditVarsTo:function(b){try{for(var c=this._editVarList.length,d=b;c>d;d++)this._editVarList[d]&&this.removeConstraint(this._editVarMap.get(this._editVarList[d].v).constraint);return this._editVarList.length=b,a.assert(this._editVarMap.size==b,\"_editVarMap.size == n\"),this}catch(e){throw new a.InternalError(\"Constraint not found in removeEditVarsTo\")}},addPointStays:function(b){return a.trace&&console.log(\"addPointStays\",b),b.forEach(function(a,b){this.addStay(a.x,e,Math.pow(2,b)),this.addStay(a.y,e,Math.pow(2,b))},this),this},addStay:function(b,c,d){var f=new a.StayConstraint(b,c||e,d||1);return this.addConstraint(f)},removeConstraint:function(a){return this.removeConstraintInternal(a),this},removeConstraintInternal:function(b){a.trace&&a.fnenterprint(\"removeConstraintInternal: \"+b),a.trace&&a.traceprint(this.toString()),this._fNeedsSolving=!0,this._resetStayConstants();var c=this.rows.get(this._objective),d=this._errorVars.get(b);a.trace&&a.traceprint(\"eVars == \"+d),null!=d&&d.each(function(e){var f=this.rows.get(e);null==f?c.addVariable(e,-b.weight*b.strength.symbolicWeight.value,this._objective,this):c.addExpression(f,-b.weight*b.strength.symbolicWeight.value,this._objective,this),a.trace&&a.traceprint(\"now eVars == \"+d)},this);var e=this._markerVars.get(b);if(this._markerVars.delete(b),null==e)throw new a.InternalError(\"Constraint not found in removeConstraintInternal\");if(a.trace&&a.traceprint(\"Looking to remove var \"+e),null==this.rows.get(e)){var f=this.columns.get(e);a.trace&&a.traceprint(\"Must pivot -- columns are \"+f);var g=null,h=0;f.each(function(b){if(b.isRestricted){var c=this.rows.get(b),d=c.coefficientFor(e);if(a.trace&&a.traceprint(\"Marker \"+e+\"'s coefficient in \"+c+\" is \"+d),0>d){var f=-c.constant/d;(null==g||h>f||a.approx(f,h)&&b.hashCode<g.hashCode)&&(h=f,g=b)}}},this),null==g&&(a.trace&&a.traceprint(\"exitVar is still null\"),f.each(function(a){if(a.isRestricted){var b=this.rows.get(a),c=b.coefficientFor(e),d=b.constant/c;(null==g||h>d)&&(h=d,g=a)}},this)),null==g&&(0==f.size?this.removeColumn(e):f.escapingEach(function(a){return a!=this._objective?(g=a,{brk:!0}):void 0},this)),null!=g&&this.pivot(e,g)}if(null!=this.rows.get(e)&&this.removeRow(e),null!=d&&d.each(function(a){a!=e&&this.removeColumn(a)},this),b.isStayConstraint){if(null!=d)for(var i=0;i<this._stayPlusErrorVars.length;i++)d.delete(this._stayPlusErrorVars[i]),d.delete(this._stayMinusErrorVars[i])}else if(b.isEditConstraint){a.assert(null!=d,\"eVars != null\");var j=this._editVarMap.get(b.variable);this.removeColumn(j.editMinus),this._editVarMap.delete(b.variable)}return null!=d&&this._errorVars.delete(d),this.autoSolve&&(this.optimize(this._objective),this._setExternalVariables()),this},reset:function(){throw a.trace&&a.fnenterprint(\"reset\"),new a.InternalError(\"reset not implemented\")},resolveArray:function(b){a.trace&&a.fnenterprint(\"resolveArray\"+b);var c=b.length;this._editVarMap.each(function(a,d){var e=d.index;c>e&&this.suggestValue(a,b[e])},this),this.resolve()},resolvePair:function(a,b){this.suggestValue(this._editVarList[0].v,a),this.suggestValue(this._editVarList[1].v,b),this.resolve()},resolve:function(){a.trace&&a.fnenterprint(\"resolve()\"),this.dualOptimize(),this._setExternalVariables(),this._infeasibleRows.clear(),this._resetStayConstants()},suggestValue:function(b,c){a.trace&&console.log(\"suggestValue(\"+b+\", \"+c+\")\");var d=this._editVarMap.get(b);if(!d)throw new a.Error(\"suggestValue for variable \"+b+\", but var is not an edit variable\");var e=c-d.prevEditConstant;return d.prevEditConstant=c,this.deltaEditConstant(e,d.editPlus,d.editMinus),this},solve:function(){return this._fNeedsSolving&&(this.optimize(this._objective),this._setExternalVariables()),this},setEditedValue:function(b,c){if(!this.columnsHasKey(b)&&null==this.rows.get(b))return b.value=c,this;if(!a.approx(c,b.value)){this.addEditVar(b),this.beginEdit();try{this.suggestValue(b,c)}catch(d){throw new a.InternalError(\"Error in setEditedValue\")}this.endEdit()}return this},addVar:function(b){if(!this.columnsHasKey(b)&&null==this.rows.get(b)){try{this.addStay(b)}catch(c){throw new a.InternalError(\"Error in addVar -- required failure is impossible\")}a.trace&&a.traceprint(\"added initial stay on \"+b)}return this},getInternalInfo:function(){var a=c.getInternalInfo.call(this);return a+=\"\\nSolver info:\\n\",a+=\"Stay Error Variables: \",a+=this._stayPlusErrorVars.length+this._stayMinusErrorVars.length,a+=\" (\"+this._stayPlusErrorVars.length+\" +, \",a+=this._stayMinusErrorVars.length+\" -)\\n\",a+=\"Edit Variables: \"+this._editVarMap.size,a+=\"\\n\"},getDebugInfo:function(){return this.toString()+this.getInternalInfo()+\"\\n\"},toString:function(){var a=c.getInternalInfo.call(this);return a+=\"\\n_stayPlusErrorVars: \",a+=\"[\"+this._stayPlusErrorVars+\"]\",a+=\"\\n_stayMinusErrorVars: \",a+=\"[\"+this._stayMinusErrorVars+\"]\",a+=\"\\n\",a+=\"_editVarMap:\\n\"+this._editVarMap,a+=\"\\n\"},getConstraintMap:function(){return this._markerVars},addWithArtificialVariable:function(b){a.trace&&a.fnenterprint(\"addWithArtificialVariable: \"+b);var c=new a.SlackVariable({value:++this._artificialCounter,prefix:\"a\"}),d=new a.ObjectiveVariable({name:\"az\"}),e=b.clone();a.trace&&a.traceprint(\"before addRows:\\n\"+this),this.addRow(d,e),this.addRow(c,b),a.trace&&a.traceprint(\"after addRows:\\n\"+this),this.optimize(d);var f=this.rows.get(d);if(a.trace&&a.traceprint(\"azTableauRow.constant == \"+f.constant),!a.approx(f.constant,0))throw this.removeRow(d),this.removeColumn(c),new a.RequiredFailure;var g=this.rows.get(c);if(null!=g){if(g.isConstant)return this.removeRow(c),this.removeRow(d),void 0;var h=g.anyPivotableVariable();this.pivot(h,c)}a.assert(null==this.rows.get(c),\"rowExpression(av) == null\"),this.removeColumn(c),this.removeRow(d)},tryAddingDirectly:function(b){a.trace&&a.fnenterprint(\"tryAddingDirectly: \"+b);var c=this.chooseSubject(b);return null==c?(a.trace&&a.fnexitprint(\"returning false\"),!1):(b.newSubject(c),this.columnsHasKey(c)&&this.substituteOut(c,b),this.addRow(c,b),a.trace&&a.fnexitprint(\"returning true\"),!0)},chooseSubject:function(b){a.trace&&a.fnenterprint(\"chooseSubject: \"+b);var c=null,d=!1,e=!1,f=b.terms,g=f.escapingEach(function(a,b){if(d){if(!a.isRestricted&&!this.columnsHasKey(a))return{retval:a}}else if(a.isRestricted){if(!e&&!a.isDummy&&0>b){var f=this.columns.get(a);(null==f||1==f.size&&this.columnsHasKey(this._objective))&&(c=a,e=!0)}}else c=a,d=!0},this);if(g&&void 0!==g.retval)return g.retval;if(null!=c)return c;var h=0,g=f.escapingEach(function(a,b){return a.isDummy?(this.columnsHasKey(a)||(c=a,h=b),void 0):{retval:null}},this);if(g&&void 0!==g.retval)return g.retval;if(!a.approx(b.constant,0))throw new a.RequiredFailure;return h>0&&b.multiplyMe(-1),c},deltaEditConstant:function(b,c,d){a.trace&&a.fnenterprint(\"deltaEditConstant :\"+b+\", \"+c+\", \"+d);var e=this.rows.get(c);if(null!=e)return e.constant+=b,e.constant<0&&this._infeasibleRows.add(c),void 0;var f=this.rows.get(d);if(null!=f)return f.constant+=-b,f.constant<0&&this._infeasibleRows.add(d),void 0;var g=this.columns.get(d);g||console.log(\"columnVars is null -- tableau is:\\n\"+this),g.each(function(a){var c=this.rows.get(a),e=c.coefficientFor(d);c.constant+=e*b,a.isRestricted&&c.constant<0&&this._infeasibleRows.add(a)},this)},dualOptimize:function(){a.trace&&a.fnenterprint(\"dualOptimize:\");for(var b=this.rows.get(this._objective);this._infeasibleRows.size;){var c=this._infeasibleRows.values()[0];this._infeasibleRows.delete(c);var d=null,e=this.rows.get(c);if(e&&e.constant<0){var f,g=Number.MAX_VALUE,h=e.terms;if(h.each(function(c,e){if(e>0&&c.isPivotable){var h=b.coefficientFor(c);f=h/e,(g>f||a.approx(f,g)&&c.hashCode<d.hashCode)&&(d=c,g=f)}}),g==Number.MAX_VALUE)throw new a.InternalError(\"ratio == nil (MAX_VALUE) in dualOptimize\");this.pivot(d,c)}}},newExpression:function(b,c,d){a.trace&&(a.fnenterprint(\"newExpression: \"+b),a.traceprint(\"cn.isInequality == \"+b.isInequality),a.traceprint(\"cn.required == \"+b.required));var e=b.expression,f=new a.Expression(e.constant),g=new a.SlackVariable,h=new a.DummyVariable,i=new a.SlackVariable,j=new a.SlackVariable,k=e.terms;if(k.each(function(a,b){var c=this.rows.get(a);c?f.addExpression(c,b):f.addVariable(a,b)},this),b.isInequality){if(a.trace&&a.traceprint(\"Inequality, adding slack\"),++this._slackCounter,g=new a.SlackVariable({value:this._slackCounter,prefix:\"s\"}),f.setVariable(g,-1),this._markerVars.set(b,g),!b.required){++this._slackCounter,i=new a.SlackVariable({value:this._slackCounter,prefix:\"em\"}),f.setVariable(i,1);\nvar l=this.rows.get(this._objective);l.setVariable(i,b.strength.symbolicWeight.value*b.weight),this.insertErrorVar(b,i),this.noteAddedVariable(i,this._objective)}}else if(b.required)a.trace&&a.traceprint(\"Equality, required\"),++this._dummyCounter,h=new a.DummyVariable({value:this._dummyCounter,prefix:\"d\"}),c[0]=h,c[1]=h,d[0]=e.constant,f.setVariable(h,1),this._markerVars.set(b,h),a.trace&&a.traceprint(\"Adding dummyVar == d\"+this._dummyCounter);else{a.trace&&a.traceprint(\"Equality, not required\"),++this._slackCounter,j=new a.SlackVariable({value:this._slackCounter,prefix:\"ep\"}),i=new a.SlackVariable({value:this._slackCounter,prefix:\"em\"}),f.setVariable(j,-1),f.setVariable(i,1),this._markerVars.set(b,j);var l=this.rows.get(this._objective);a.trace&&console.log(l);var m=b.strength.symbolicWeight.value*b.weight;0==m&&(a.trace&&a.traceprint(\"cn == \"+b),a.trace&&a.traceprint(\"adding \"+j+\" and \"+i+\" with swCoeff == \"+m)),l.setVariable(j,m),this.noteAddedVariable(j,this._objective),l.setVariable(i,m),this.noteAddedVariable(i,this._objective),this.insertErrorVar(b,i),this.insertErrorVar(b,j),b.isStayConstraint?(this._stayPlusErrorVars.push(j),this._stayMinusErrorVars.push(i)):b.isEditConstraint&&(c[0]=j,c[1]=i,d[0]=e.constant)}return f.constant<0&&f.multiplyMe(-1),a.trace&&a.fnexitprint(\"returning \"+f),f},optimize:function(b){a.trace&&a.fnenterprint(\"optimize: \"+b),a.trace&&a.traceprint(this.toString()),this._optimizeCount++;var c=this.rows.get(b);a.assert(null!=c,\"zRow != null\");for(var e,f,g=null,h=null;;){if(e=0,f=c.terms,f.escapingEach(function(a,b){return a.isPivotable&&e>b?(e=b,g=a,{brk:1}):void 0},this),e>=-d)return;a.trace&&console.log(\"entryVar:\",g,\"objectiveCoeff:\",e);var i=Number.MAX_VALUE,j=this.columns.get(g),k=0;if(j.each(function(b){if(a.trace&&a.traceprint(\"Checking \"+b),b.isPivotable){var c=this.rows.get(b),d=c.coefficientFor(g);a.trace&&a.traceprint(\"pivotable, coeff = \"+d),0>d&&(k=-c.constant/d,(i>k||a.approx(k,i)&&b.hashCode<h.hashCode)&&(i=k,h=b))}},this),i==Number.MAX_VALUE)throw new a.InternalError(\"Objective function is unbounded in optimize\");this.pivot(g,h),a.trace&&a.traceprint(this.toString())}},pivot:function(b,c){a.trace&&console.log(\"pivot: \",b,c);var d=!1;d&&console.time(\" SimplexSolver::pivot\"),null==b&&console.warn(\"pivot: entryVar == null\"),null==c&&console.warn(\"pivot: exitVar == null\"),d&&console.time(\"  removeRow\");var e=this.removeRow(c);d&&console.timeEnd(\"  removeRow\"),d&&console.time(\"  changeSubject\"),e.changeSubject(c,b),d&&console.timeEnd(\"  changeSubject\"),d&&console.time(\"  substituteOut\"),this.substituteOut(b,e),d&&console.timeEnd(\"  substituteOut\"),d&&console.time(\"  addRow\"),this.addRow(b,e),d&&console.timeEnd(\"  addRow\"),d&&console.timeEnd(\" SimplexSolver::pivot\")},_resetStayConstants:function(){a.trace&&console.log(\"_resetStayConstants\");for(var b=0;b<this._stayPlusErrorVars.length;b++){var c=this.rows.get(this._stayPlusErrorVars[b]);null==c&&(c=this.rows.get(this._stayMinusErrorVars[b])),null!=c&&(c.constant=0)}},_setExternalVariables:function(){a.trace&&a.fnenterprint(\"_setExternalVariables:\"),a.trace&&a.traceprint(this.toString());var b={};this._externalParametricVars.each(function(c){null!=this.rows.get(c)?a.trace&&console.log(\"Error: variable\"+c+\" in _externalParametricVars is basic\"):(c.value=0,b[c.name]=0)},this),this._externalRows.each(function(a){var c=this.rows.get(a);a.value!=c.constant&&(a.value=c.constant,b[a.name]=c.constant)},this),this._changed=b,this._fNeedsSolving=!1,this._informCallbacks(),this.onsolved()},onsolved:function(){},_informCallbacks:function(){if(this._callbacks){var a=this._changed;this._callbacks.forEach(function(b){b(a)})}},_addCallback:function(a){(this._callbacks||(this._callbacks=[])).push(a)},insertErrorVar:function(b,c){a.trace&&a.fnenterprint(\"insertErrorVar:\"+b+\", \"+c);var d=this._errorVars.get(c);d||(d=new a.HashSet,this._errorVars.set(b,d)),d.add(c)}})}(this.c||module.parent.exports||{}),function(a){\"use strict\";a.Timer=a.inherit({initialize:function(){this.isRunning=!1,this._elapsedMs=0},start:function(){return this.isRunning=!0,this._startReading=new Date,this},stop:function(){return this.isRunning=!1,this._elapsedMs+=new Date-this._startReading,this},reset:function(){return this.isRunning=!1,this._elapsedMs=0,this},elapsedTime:function(){return this.isRunning?(this._elapsedMs+(new Date-this._startReading))/1e3:this._elapsedMs/1e3}})}(this.c||module.parent.exports||{}),this.c.parser=function(){function a(a){return'\"'+a.replace(/\\\\/g,\"\\\\\\\\\").replace(/\"/g,'\\\\\"').replace(/\\x08/g,\"\\\\b\").replace(/\\t/g,\"\\\\t\").replace(/\\n/g,\"\\\\n\").replace(/\\f/g,\"\\\\f\").replace(/\\r/g,\"\\\\r\").replace(/[\\x00-\\x07\\x0B\\x0E-\\x1F\\x80-\\uFFFF]/g,escape)+'\"'}var b={parse:function(b,c){function d(a){O>M||(M>O&&(O=M,P=[]),P.push(a))}function e(){var a,b,c,d,e;if(d=M,e=M,a=s(),null!==a){for(b=[],c=f();null!==c;)b.push(c),c=f();null!==b?(c=s(),null!==c?a=[a,b,c]:(a=null,M=e)):(a=null,M=e)}else a=null,M=e;return null!==a&&(a=function(a,b){return b}(d,a[1])),null===a&&(M=d),a}function f(){var a,b,c,d;return c=M,d=M,a=I(),null!==a?(b=l(),null!==b?a=[a,b]:(a=null,M=d)):(a=null,M=d),null!==a&&(a=function(a,b){return b}(c,a[0])),null===a&&(M=c),a}function g(){var a;return b.length>M?(a=b.charAt(M),M++):(a=null,0===N&&d(\"any character\")),a}function h(){var a;return/^[a-zA-Z]/.test(b.charAt(M))?(a=b.charAt(M),M++):(a=null,0===N&&d(\"[a-zA-Z]\")),null===a&&(36===b.charCodeAt(M)?(a=\"$\",M++):(a=null,0===N&&d('\"$\"')),null===a&&(95===b.charCodeAt(M)?(a=\"_\",M++):(a=null,0===N&&d('\"_\"')))),a}function i(){var a;return N++,/^[\\t\\x0B\\f \\xA0\\uFEFF]/.test(b.charAt(M))?(a=b.charAt(M),M++):(a=null,0===N&&d(\"[\\\\t\\\\x0B\\\\f \\\\xA0\\\\uFEFF]\")),N--,0===N&&null===a&&d(\"whitespace\"),a}function j(){var a;return/^[\\n\\r\\u2028\\u2029]/.test(b.charAt(M))?(a=b.charAt(M),M++):(a=null,0===N&&d(\"[\\\\n\\\\r\\\\u2028\\\\u2029]\")),a}function k(){var a;return N++,10===b.charCodeAt(M)?(a=\"\\n\",M++):(a=null,0===N&&d('\"\\\\n\"')),null===a&&(\"\\r\\n\"===b.substr(M,2)?(a=\"\\r\\n\",M+=2):(a=null,0===N&&d('\"\\\\r\\\\n\"')),null===a&&(13===b.charCodeAt(M)?(a=\"\\r\",M++):(a=null,0===N&&d('\"\\\\r\"')),null===a&&(8232===b.charCodeAt(M)?(a=\"\\u2028\",M++):(a=null,0===N&&d('\"\\\\u2028\"')),null===a&&(8233===b.charCodeAt(M)?(a=\"\\u2029\",M++):(a=null,0===N&&d('\"\\\\u2029\"')))))),N--,0===N&&null===a&&d(\"end of line\"),a}function l(){var a,c,e;return e=M,a=s(),null!==a?(59===b.charCodeAt(M)?(c=\";\",M++):(c=null,0===N&&d('\";\"')),null!==c?a=[a,c]:(a=null,M=e)):(a=null,M=e),null===a&&(e=M,a=r(),null!==a?(c=k(),null!==c?a=[a,c]:(a=null,M=e)):(a=null,M=e),null===a&&(e=M,a=s(),null!==a?(c=m(),null!==c?a=[a,c]:(a=null,M=e)):(a=null,M=e))),a}function m(){var a,c;return c=M,N++,b.length>M?(a=b.charAt(M),M++):(a=null,0===N&&d(\"any character\")),N--,null===a?a=\"\":(a=null,M=c),a}function n(){var a;return N++,a=o(),null===a&&(a=q()),N--,0===N&&null===a&&d(\"comment\"),a}function o(){var a,c,e,f,h,i,j;if(h=M,\"/*\"===b.substr(M,2)?(a=\"/*\",M+=2):(a=null,0===N&&d('\"/*\"')),null!==a){for(c=[],i=M,j=M,N++,\"*/\"===b.substr(M,2)?(e=\"*/\",M+=2):(e=null,0===N&&d('\"*/\"')),N--,null===e?e=\"\":(e=null,M=j),null!==e?(f=g(),null!==f?e=[e,f]:(e=null,M=i)):(e=null,M=i);null!==e;)c.push(e),i=M,j=M,N++,\"*/\"===b.substr(M,2)?(e=\"*/\",M+=2):(e=null,0===N&&d('\"*/\"')),N--,null===e?e=\"\":(e=null,M=j),null!==e?(f=g(),null!==f?e=[e,f]:(e=null,M=i)):(e=null,M=i);null!==c?(\"*/\"===b.substr(M,2)?(e=\"*/\",M+=2):(e=null,0===N&&d('\"*/\"')),null!==e?a=[a,c,e]:(a=null,M=h)):(a=null,M=h)}else a=null,M=h;return a}function p(){var a,c,e,f,h,i,k;if(h=M,\"/*\"===b.substr(M,2)?(a=\"/*\",M+=2):(a=null,0===N&&d('\"/*\"')),null!==a){for(c=[],i=M,k=M,N++,\"*/\"===b.substr(M,2)?(e=\"*/\",M+=2):(e=null,0===N&&d('\"*/\"')),null===e&&(e=j()),N--,null===e?e=\"\":(e=null,M=k),null!==e?(f=g(),null!==f?e=[e,f]:(e=null,M=i)):(e=null,M=i);null!==e;)c.push(e),i=M,k=M,N++,\"*/\"===b.substr(M,2)?(e=\"*/\",M+=2):(e=null,0===N&&d('\"*/\"')),null===e&&(e=j()),N--,null===e?e=\"\":(e=null,M=k),null!==e?(f=g(),null!==f?e=[e,f]:(e=null,M=i)):(e=null,M=i);null!==c?(\"*/\"===b.substr(M,2)?(e=\"*/\",M+=2):(e=null,0===N&&d('\"*/\"')),null!==e?a=[a,c,e]:(a=null,M=h)):(a=null,M=h)}else a=null,M=h;return a}function q(){var a,c,e,f,h,i,k;if(h=M,\"//\"===b.substr(M,2)?(a=\"//\",M+=2):(a=null,0===N&&d('\"//\"')),null!==a){for(c=[],i=M,k=M,N++,e=j(),N--,null===e?e=\"\":(e=null,M=k),null!==e?(f=g(),null!==f?e=[e,f]:(e=null,M=i)):(e=null,M=i);null!==e;)c.push(e),i=M,k=M,N++,e=j(),N--,null===e?e=\"\":(e=null,M=k),null!==e?(f=g(),null!==f?e=[e,f]:(e=null,M=i)):(e=null,M=i);null!==c?(e=j(),null===e&&(e=m()),null!==e?a=[a,c,e]:(a=null,M=h)):(a=null,M=h)}else a=null,M=h;return a}function r(){var a,b;for(a=[],b=i(),null===b&&(b=p(),null===b&&(b=q()));null!==b;)a.push(b),b=i(),null===b&&(b=p(),null===b&&(b=q()));return a}function s(){var a,b;for(a=[],b=i(),null===b&&(b=k(),null===b&&(b=n()));null!==b;)a.push(b),b=i(),null===b&&(b=k(),null===b&&(b=n()));return a}function t(){var a,b;return b=M,a=v(),null===a&&(a=u()),null!==a&&(a=function(a,b){return{type:\"NumericLiteral\",value:b}}(b,a)),null===a&&(M=b),a}function u(){var a,c,e;if(e=M,/^[0-9]/.test(b.charAt(M))?(c=b.charAt(M),M++):(c=null,0===N&&d(\"[0-9]\")),null!==c)for(a=[];null!==c;)a.push(c),/^[0-9]/.test(b.charAt(M))?(c=b.charAt(M),M++):(c=null,0===N&&d(\"[0-9]\"));else a=null;return null!==a&&(a=function(a,b){return parseInt(b.join(\"\"))}(e,a)),null===a&&(M=e),a}function v(){var a,c,e,f,g;return f=M,g=M,a=u(),null!==a?(46===b.charCodeAt(M)?(c=\".\",M++):(c=null,0===N&&d('\".\"')),null!==c?(e=u(),null!==e?a=[a,c,e]:(a=null,M=g)):(a=null,M=g)):(a=null,M=g),null!==a&&(a=function(a,b){return parseFloat(b.join(\"\"))}(f,a)),null===a&&(M=f),a}function w(){var a,c,e,f;if(f=M,/^[\\-+]/.test(b.charAt(M))?(a=b.charAt(M),M++):(a=null,0===N&&d(\"[\\\\-+]\")),a=null!==a?a:\"\",null!==a){if(/^[0-9]/.test(b.charAt(M))?(e=b.charAt(M),M++):(e=null,0===N&&d(\"[0-9]\")),null!==e)for(c=[];null!==e;)c.push(e),/^[0-9]/.test(b.charAt(M))?(e=b.charAt(M),M++):(e=null,0===N&&d(\"[0-9]\"));else c=null;null!==c?a=[a,c]:(a=null,M=f)}else a=null,M=f;return a}function x(){var a,b;return N++,b=M,a=y(),null!==a&&(a=function(a,b){return b}(b,a)),null===a&&(M=b),N--,0===N&&null===a&&d(\"identifier\"),a}function y(){var a,b,c,e,f;if(N++,e=M,f=M,a=h(),null!==a){for(b=[],c=h();null!==c;)b.push(c),c=h();null!==b?a=[a,b]:(a=null,M=f)}else a=null,M=f;return null!==a&&(a=function(a,b,c){return b+c.join(\"\")}(e,a[0],a[1])),null===a&&(M=e),N--,0===N&&null===a&&d(\"identifier\"),a}function z(){var a,c,e,f,g,h,i;return h=M,a=x(),null!==a&&(a=function(a,b){return{type:\"Variable\",name:b}}(h,a)),null===a&&(M=h),null===a&&(a=t(),null===a&&(h=M,i=M,40===b.charCodeAt(M)?(a=\"(\",M++):(a=null,0===N&&d('\"(\"')),null!==a?(c=s(),null!==c?(e=I(),null!==e?(f=s(),null!==f?(41===b.charCodeAt(M)?(g=\")\",M++):(g=null,0===N&&d('\")\"')),null!==g?a=[a,c,e,f,g]:(a=null,M=i)):(a=null,M=i)):(a=null,M=i)):(a=null,M=i)):(a=null,M=i),null!==a&&(a=function(a,b){return b}(h,a[2])),null===a&&(M=h))),a}function A(){var a,b,c,d,e;return a=z(),null===a&&(d=M,e=M,a=B(),null!==a?(b=s(),null!==b?(c=A(),null!==c?a=[a,b,c]:(a=null,M=e)):(a=null,M=e)):(a=null,M=e),null!==a&&(a=function(a,b,c){return{type:\"UnaryExpression\",operator:b,expression:c}}(d,a[0],a[2])),null===a&&(M=d)),a}function B(){var a;return 43===b.charCodeAt(M)?(a=\"+\",M++):(a=null,0===N&&d('\"+\"')),null===a&&(45===b.charCodeAt(M)?(a=\"-\",M++):(a=null,0===N&&d('\"-\"')),null===a&&(33===b.charCodeAt(M)?(a=\"!\",M++):(a=null,0===N&&d('\"!\"')))),a}function C(){var a,b,c,d,e,f,g,h,i;if(g=M,h=M,a=A(),null!==a){for(b=[],i=M,c=s(),null!==c?(d=D(),null!==d?(e=s(),null!==e?(f=A(),null!==f?c=[c,d,e,f]:(c=null,M=i)):(c=null,M=i)):(c=null,M=i)):(c=null,M=i);null!==c;)b.push(c),i=M,c=s(),null!==c?(d=D(),null!==d?(e=s(),null!==e?(f=A(),null!==f?c=[c,d,e,f]:(c=null,M=i)):(c=null,M=i)):(c=null,M=i)):(c=null,M=i);null!==b?a=[a,b]:(a=null,M=h)}else a=null,M=h;return null!==a&&(a=function(a,b,c){for(var d=b,e=0;e<c.length;e++)d={type:\"MultiplicativeExpression\",operator:c[e][1],left:d,right:c[e][3]};return d}(g,a[0],a[1])),null===a&&(M=g),a}function D(){var a;return 42===b.charCodeAt(M)?(a=\"*\",M++):(a=null,0===N&&d('\"*\"')),null===a&&(47===b.charCodeAt(M)?(a=\"/\",M++):(a=null,0===N&&d('\"/\"'))),a}function E(){var a,b,c,d,e,f,g,h,i;if(g=M,h=M,a=C(),null!==a){for(b=[],i=M,c=s(),null!==c?(d=F(),null!==d?(e=s(),null!==e?(f=C(),null!==f?c=[c,d,e,f]:(c=null,M=i)):(c=null,M=i)):(c=null,M=i)):(c=null,M=i);null!==c;)b.push(c),i=M,c=s(),null!==c?(d=F(),null!==d?(e=s(),null!==e?(f=C(),null!==f?c=[c,d,e,f]:(c=null,M=i)):(c=null,M=i)):(c=null,M=i)):(c=null,M=i);null!==b?a=[a,b]:(a=null,M=h)}else a=null,M=h;return null!==a&&(a=function(a,b,c){for(var d=b,e=0;e<c.length;e++)d={type:\"AdditiveExpression\",operator:c[e][1],left:d,right:c[e][3]};return d}(g,a[0],a[1])),null===a&&(M=g),a}function F(){var a;return 43===b.charCodeAt(M)?(a=\"+\",M++):(a=null,0===N&&d('\"+\"')),null===a&&(45===b.charCodeAt(M)?(a=\"-\",M++):(a=null,0===N&&d('\"-\"'))),a}function G(){var a,b,c,d,e,f,g,h,i;if(g=M,h=M,a=E(),null!==a){for(b=[],i=M,c=s(),null!==c?(d=H(),null!==d?(e=s(),null!==e?(f=E(),null!==f?c=[c,d,e,f]:(c=null,M=i)):(c=null,M=i)):(c=null,M=i)):(c=null,M=i);null!==c;)b.push(c),i=M,c=s(),null!==c?(d=H(),null!==d?(e=s(),null!==e?(f=E(),null!==f?c=[c,d,e,f]:(c=null,M=i)):(c=null,M=i)):(c=null,M=i)):(c=null,M=i);null!==b?a=[a,b]:(a=null,M=h)}else a=null,M=h;return null!==a&&(a=function(a,b,c){for(var d=b,e=0;e<c.length;e++)d={type:\"Inequality\",operator:c[e][1],left:d,right:c[e][3]};return d}(g,a[0],a[1])),null===a&&(M=g),a}function H(){var a;return\"<=\"===b.substr(M,2)?(a=\"<=\",M+=2):(a=null,0===N&&d('\"<=\"')),null===a&&(\">=\"===b.substr(M,2)?(a=\">=\",M+=2):(a=null,0===N&&d('\">=\"')),null===a&&(60===b.charCodeAt(M)?(a=\"<\",M++):(a=null,0===N&&d('\"<\"')),null===a&&(62===b.charCodeAt(M)?(a=\">\",M++):(a=null,0===N&&d('\">\"'))))),a}function I(){var a,c,e,f,g,h,i,j,k;if(i=M,j=M,a=G(),null!==a){for(c=[],k=M,e=s(),null!==e?(\"==\"===b.substr(M,2)?(f=\"==\",M+=2):(f=null,0===N&&d('\"==\"')),null!==f?(g=s(),null!==g?(h=G(),null!==h?e=[e,f,g,h]:(e=null,M=k)):(e=null,M=k)):(e=null,M=k)):(e=null,M=k);null!==e;)c.push(e),k=M,e=s(),null!==e?(\"==\"===b.substr(M,2)?(f=\"==\",M+=2):(f=null,0===N&&d('\"==\"')),null!==f?(g=s(),null!==g?(h=G(),null!==h?e=[e,f,g,h]:(e=null,M=k)):(e=null,M=k)):(e=null,M=k)):(e=null,M=k);null!==c?a=[a,c]:(a=null,M=j)}else a=null,M=j;return null!==a&&(a=function(a,b,c){for(var d=b,e=0;e<c.length;e++)d={type:\"Equality\",operator:c[e][1],left:d,right:c[e][3]};return d}(i,a[0],a[1])),null===a&&(M=i),a}function J(a){a.sort();for(var b=null,c=[],d=0;d<a.length;d++)a[d]!==b&&(c.push(a[d]),b=a[d]);return c}function K(){for(var a=1,c=1,d=!1,e=0;e<Math.max(M,O);e++){var f=b.charAt(e);\"\\n\"===f?(d||a++,c=1,d=!1):\"\\r\"===f||\"\\u2028\"===f||\"\\u2029\"===f?(a++,c=1,d=!0):(c++,d=!1)}return{line:a,column:c}}var L={start:e,Statement:f,SourceCharacter:g,IdentifierStart:h,WhiteSpace:i,LineTerminator:j,LineTerminatorSequence:k,EOS:l,EOF:m,Comment:n,MultiLineComment:o,MultiLineCommentNoLineTerminator:p,SingleLineComment:q,_:r,__:s,Literal:t,Integer:u,Real:v,SignedInteger:w,Identifier:x,IdentifierName:y,PrimaryExpression:z,UnaryExpression:A,UnaryOperator:B,MultiplicativeExpression:C,MultiplicativeOperator:D,AdditiveExpression:E,AdditiveOperator:F,InequalityExpression:G,InequalityOperator:H,LinearExpression:I};if(void 0!==c){if(void 0===L[c])throw new Error(\"Invalid rule name: \"+a(c)+\".\")}else c=\"start\";var M=0,N=0,O=0,P=[],Q=L[c]();if(null===Q||M!==b.length){var R=Math.max(M,O),S=R<b.length?b.charAt(R):null,T=K();throw new this.SyntaxError(J(P),S,R,T.line,T.column)}return Q},toSource:function(){return this._source}};return b.SyntaxError=function(b,c,d,e,f){function g(b,c){var d,e;switch(b.length){case 0:d=\"end of input\";break;case 1:d=b[0];break;default:d=b.slice(0,b.length-1).join(\", \")+\" or \"+b[b.length-1]}return e=c?a(c):\"end of input\",\"Expected \"+d+\" but \"+e+\" found.\"}this.name=\"SyntaxError\",this.expected=b,this.found=c,this.message=g(b,c),this.offset=d,this.line=e,this.column=f},b.SyntaxError.prototype=Error.prototype,b}(),function(a){\"use strict\";var b=new a.SimplexSolver,c={},d={},e=a.Strength.weak;a.Strength.medium,a.Strength.strong,a.Strength.required;var f=function(g){if(d[g])return d[g];switch(g.type){case\"Inequality\":var h=\"<=\"==g.operator?a.LEQ:a.GEQ,i=new a.Inequality(f(g.left),h,f(g.right),e);return b.addConstraint(i),i;case\"Equality\":var i=new a.Equation(f(g.left),f(g.right),e);return b.addConstraint(i),i;case\"MultiplicativeExpression\":var i=a.times(f(g.left),f(g.right));return b.addConstraint(i),i;case\"AdditiveExpression\":return\"+\"==g.operator?a.plus(f(g.left),f(g.right)):a.minus(f(g.left),f(g.right));case\"NumericLiteral\":return new a.Expression(g.value);case\"Variable\":return c[g.name]||(c[g.name]=new a.Variable({name:g.name})),c[g.name];case\"UnaryExpression\":console.log(\"UnaryExpression...WTF?\")}},g=function(a){return a.map(f)};a._api=function(){var c=Array.prototype.slice.call(arguments);if(1==c.length){if(\"string\"==typeof c[0]){var d=a.parser.parse(c[0]);return g(d)}\"function\"==typeof c[0]&&b._addCallback(c[0])}}}(this.c||module.parent.exports||{})}).call(\"undefined\"!=typeof module?module.compiled=!0&&module:this);var Thread,__bind=function(a,b){return function(){return a.apply(b,arguments)}},__slice=[].slice;Thread=function(){function a(){this._remove=__bind(this._remove,this),this.remove=__bind(this.remove,this),this.stay=__bind(this.stay,this),this.suggest=__bind(this.suggest,this),this._editvar=__bind(this._editvar,this),this.gt=__bind(this.gt,this),this.lt=__bind(this.lt,this),this.gte=__bind(this.gte,this),this.lte=__bind(this.lte,this),this.eq=__bind(this.eq,this),this._addConstraint=__bind(this._addConstraint,this),this._execute=__bind(this._execute,this),this.execute=__bind(this.execute,this);var a;this.cachedVars={},a=new c.SimplexSolver,this.__editVarNames=[],a.autoSolve=!1,this.solver=a,this.constraintsByTracker={},this.varIdsByTracker={}}return a.prototype.execute=function(a){var b,c,d,e,f;for(e=a.commands,f=[],c=0,d=e.length;d>c;c++)b=e[c],f.push(this._execute(b,b));return f},a.prototype._execute=function(a,b){var c,d,e,f,g,h,i;if(e=a,c=this[e[0]],null==c)throw new Error(\"Thread.execute broke, couldn't find method: \"+e[0]);for(i=e.slice(1,+e.length+1||9e9),d=g=0,h=i.length;h>g;d=++g)f=i[d],f instanceof Array&&e.splice(d+1,1,this._execute(f,b));return c.call.apply(c,[this,b].concat(__slice.call(e.slice(1,e.length))))},a.prototype._getValues=function(){var a,b;this.solver.solve(),b={};for(a in this.cachedVars)b[a]=this.cachedVars[a].value;return b},a.prototype.number=function(a,b){return Number(b)},a.prototype._trackVarId=function(a,b){return this.varIdsByTracker[b]||(this.varIdsByTracker[b]=[]),-1===this.varIdsByTracker[b].indexOf(a)?this.varIdsByTracker[b].push(a):void 0},a.prototype[\"var\"]=function(a,b,d){var e;return this.cachedVars[b]?this.cachedVars[b]:(e=new c.Variable({name:b}),d&&(this._trackVarId(b,d),e._tracker=d,e._is_tracked=!0),this.cachedVars[b]=e,e)},a.prototype.varexp=function(a,b,d,e){var f;if(f=this.cachedVars,f[b])return f[b];if(!(d instanceof c.Expression))throw new Error(\"Thread `varexp` requires an instance of c.Expression\");return Object.defineProperty(f,b,{get:function(){var a;return a=d.clone(),e&&(this._trackVarId(b,e),a._tracker=e,a._is_tracked=!0),a}}),d},a.prototype._trackRootIfNeeded=function(a,b){return b&&(a._is_tracked=!0,a._trackers||(a._trackers=[]),-1===a._trackers.indexOf(b))?a._trackers.push(b):void 0},a.prototype.get=function(a,b,c){var d;if(d=this.cachedVars[b])return this._trackRootIfNeeded(a,c),this._trackRootIfNeeded(a,d.tracker),d;throw new Error(\"AST method 'get' couldn't find var with id: \"+b)},a.prototype.plus=function(a,b,d){return c.plus(b,d)},a.prototype.minus=function(a,b,d){return c.minus(b,d)},a.prototype.multiply=function(a,b,d){return c.times(b,d)},a.prototype.divide=function(a,b,d){return c.divide(b,d)},a.prototype._strength=function(a){var b;return null==a&&(a=\"required\"),\"string\"==typeof a?(\"require\"===a&&(a=\"required\"),b=c.Strength[a]):a},a.prototype._addConstraint=function(a,b){var c,d,e,f;if(this.solver.addConstraint(b),a._is_tracked)for(f=a._trackers,d=0,e=f.length;e>d;d++)c=f[d],this.constraintsByTracker[c]||(this.constraintsByTracker[c]=[]),this.constraintsByTracker[c].push(b);return b},a.prototype.eq=function(a,b,d,e,f){return this._addConstraint(a,new c.Equation(b,d,this._strength(e),f))},a.prototype.lte=function(a,b,d,e,f){return this._addConstraint(a,new c.Inequality(b,c.LEQ,d,this._strength(e),f))},a.prototype.gte=function(a,b,d,e,f){return this._addConstraint(a,new c.Inequality(b,c.GEQ,d,this._strength(e),f))},a.prototype.lt=function(a,b,d,e,f){return this._addConstraint(a,new c.Inequality(b,c.LEQ,d,this._strength(e),f))},a.prototype.gt=function(a,b,d,e,f){return this._addConstraint(a,new c.Inequality(b,c.GEQ,d,this._strength(e),f))},a.prototype._editvar=function(a,b,c){return-1===this.__editVarNames.indexOf(a.name)&&(this.__editVarNames.push(a.name),this.solver.addEditVar(a,this._strength(b),c)),this},a.prototype.suggest=function(a,b,c,d,e){return null==d&&(d=\"strong\"),\"string\"==typeof b&&(b=this.get(a,b)),this._editvar(b,d,e),this.solver.suggestValue(b,c),this.solver.resolve()},a.prototype.stay=function(){var a,b,c,d,e;for(a=__slice.call(arguments),e=a.slice(1,a.length),c=0,d=e.length;d>c;c++)b=e[c],this.solver.addStay(b);return this.solver},a.prototype.remove=function(){var a,b,c,d,e,f;for(a=__slice.call(arguments),c=__slice.call(a.slice(1,a.length)),f=[],d=0,e=c.length;e>d;d++)b=c[d],f.push(this._remove(b));return f},a.prototype._remove=function(a){var b,c,d,e,f,g,h,i,j,k;if(delete this.__editVarNames[a],this.constraintsByTracker[a]){for(j=this.constraintsByTracker[a],f=0,h=j.length;h>f;f++){b=j[f];try{this.solver.removeConstraint(b)}catch(l){c=l,e=\"please\"}}delete this.constraintsByTracker[a]}if(this.varIdsByTracker[a]){for(k=this.varIdsByTracker[a],g=0,i=k.length;i>g;g++)d=k[g],delete this.cachedVars[d];return delete this.varIdsByTracker[a]}},a}();var w;w=new Thread,self.onmessage=function(a){var b;return b=a.data,w.execute(b),self.postMessage({values:w._getValues()})};"],{type:"text/javascript"}));
-});
 require.register("gss/lib/gss.js", function(exports, require, module){
 var compiler;
 
 compiler = require("gss-compiler");
+
+if (!window.GSS_CONFIG) {
+  window.GSS_CONFIG = {};
+}
+
+if (!window.GSS_CONFIG.workerURL) {
+  window.GSS_CONFIG.workerURL = '../browser/the-gss-engine/worker/gss-solver.js';
+}
 
 require("gss-engine");
 
@@ -9525,6 +10044,8 @@ require.alias("the-gss-ccss-compiler/lib/ccss-compiler.js", "the-gss-ccss-compil
 require.alias("the-gss-vfl-compiler/lib/compiler.js", "the-gss-vfl-compiler/index.js");
 require.alias("the-gss-compiler/lib/gss-compiler.js", "the-gss-compiler/index.js");
 require.alias("the-gss-engine/lib/GSS.js", "gss/deps/gss-engine/lib/GSS.js");
+require.alias("the-gss-engine/lib/_.js", "gss/deps/gss-engine/lib/_.js");
+require.alias("the-gss-engine/lib/EventTrigger.js", "gss/deps/gss-engine/lib/EventTrigger.js");
 require.alias("the-gss-engine/lib/dom/Query.js", "gss/deps/gss-engine/lib/dom/Query.js");
 require.alias("the-gss-engine/lib/dom/Observer.js", "gss/deps/gss-engine/lib/dom/Observer.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/lib/Engine.js");
@@ -9532,7 +10053,6 @@ require.alias("the-gss-engine/lib/Commander.js", "gss/deps/gss-engine/lib/Comman
 require.alias("the-gss-engine/lib/dom/Getter.js", "gss/deps/gss-engine/lib/dom/Getter.js");
 require.alias("the-gss-engine/lib/dom/Setter.js", "gss/deps/gss-engine/lib/dom/Setter.js");
 require.alias("the-gss-engine/lib/dom/IdMixin.js", "gss/deps/gss-engine/lib/dom/IdMixin.js");
-require.alias("the-gss-engine/lib/WorkerBlobUrl.js", "gss/deps/gss-engine/lib/WorkerBlobUrl.js");
 require.alias("the-gss-engine/lib/GSS.js", "gss/deps/gss-engine/index.js");
 require.alias("the-gss-engine/lib/GSS.js", "gss-engine/index.js");
 require.alias("d4tocchini-customevent-polyfill/CustomEvent.js", "the-gss-engine/deps/customevent-polyfill/CustomEvent.js");
