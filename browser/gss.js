@@ -11320,7 +11320,7 @@ module.exports = IdMixin;
 
 });
 require.register("gss/lib/gss.js", function(exports, require, module){
-var compiler;
+var compiler, link, remoteGSS, runRemotes, _i, _len;
 
 compiler = require("gss-compiler");
 
@@ -11366,6 +11366,33 @@ GSS.Getter.prototype['readAST:text/gss'] = function(node) {
   ast = GSS.compile(source);
   return ast;
 };
+
+runRemotes = function(url) {
+  var req;
+  req = new XMLHttpRequest;
+  req.onreadystatechange = function() {
+    var engine;
+    if (req.readyState !== 4) {
+      return;
+    }
+    if (req.status !== 200) {
+      return;
+    }
+    engine = GSS(document);
+    return engine.compile(req.responseText);
+  };
+  req.open('GET', url, true);
+  return req.send(null);
+};
+
+remoteGSS = document.querySelectorAll('link[rel="stylesheet"][type="text/gss"]');
+
+if (remoteGSS) {
+  for (_i = 0, _len = remoteGSS.length; _i < _len; _i++) {
+    link = remoteGSS[_i];
+    runRemotes(link.getAttribute('href'));
+  }
+}
 
 });
 

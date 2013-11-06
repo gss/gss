@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>GSS in browser</title>
+    <!--link rel="stylesheet" href="http://cdn.thegrid.io/mocha/mocha.css"-->
+    <link rel="stylesheet" href="../node_modules/mocha/mocha.css">
+    <link rel="stylesheet" type="text/gss" href="playground-remote.gss">
+  </head>
+  <body>
+    <div id="mocha"></div>
+    
+    <script src="../components/the-gss-engine/vendor/sidetable.js"></script>
+    <script src="../components/the-gss-engine/vendor/MutationObserver.js"></script>
+    <script src="../components/the-gss-engine/vendor/observe.js"></script>
+    <!--script src="../vendor/jquery.documentReady.js"></script-->
+    <script src="../browser/gss.js"></script>
+    
+    <div class="box" id="b1" style="background-color:hsl(220,40%,50%);"></div>
+    <div class="box" id="b2" style="background-color:hsl(340,40%,50%);"></div>
+    <div class="box" id="b3" style="background-color:hsl(100,40%,50%);"></div>
+    <div class="box" id="d1" style="background-color:red;"></div>
+    <div class="box" id="d2" style="background-color:blue;"></div>
+    
+  </body>
+</html>

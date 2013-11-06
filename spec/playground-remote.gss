@@ -1,0 +1,11 @@
+.box[width] >= 200 <= .box[height] !medium;
+.target[width] == 33;
+
+@stay #b1[width];
+@horizontal |-[#b1]-[#b2]-[#b3]-| in(::window) chain-center-y(==#d1[top]) chain-width(>=20!require) !strong;   
+[hgap] == 10;
+
+#d1[center-x] == ::window[right];
+#d1[center-y] == ::window[center-y];
+#d2[center-x] == ::window[left];
+#d2[center-y] == ::window[center-y];
