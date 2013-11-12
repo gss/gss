@@ -96,7 +96,7 @@ describe 'GSS runtime', ->
         """
       after: (solved) ->
         # solver
-        chai.expect(solvedValue('b1','x',solved)).to.equal 10
+        chai.assert( solvedValue('b1','x',solved) is 10, "#b1[x]")
         chai.expect(solvedValue('b1','width',solved)).to.equal 11
         # dom
         chai.expect(measure('b1','left')).to.equal 10
@@ -105,8 +105,8 @@ describe 'GSS runtime', ->
         chai.expect(measure('b2','width')).to.equal 9
         chai.expect(measure('b3','left')).to.equal 130
         chai.expect(measure('b3','width')).to.equal 10
-  
-  # 
+
+  #
   #
   #
   describe "<style>", ->
