@@ -9170,11 +9170,13 @@ EventTrigger = (function() {
   }
 
   EventTrigger.prototype._getListeners = function(type) {
+    var byType;
     if (this._listenersByType[type]) {
-      return this._listenersByType[type];
+      byType = this._listenersByType[type];
+    } else {
+      byType = this._listenersByType[type] = [];
     }
-    this._listenersByType[type] = [];
-    return this._listenersByType[type];
+    return byType;
   };
 
   EventTrigger.prototype.on = function(type, listener) {
@@ -9186,19 +9188,43 @@ EventTrigger = (function() {
     return this;
   };
 
+  EventTrigger.prototype.once = function(type, listener) {
+    var that, wrap;
+    wrap = null;
+    that = this;
+    wrap = function(o) {
+      listener.call(that, o);
+      return that.off(type, wrap);
+    };
+    this.on(type, wrap);
+    return this;
+  };
+
   EventTrigger.prototype.off = function(type, listener) {
     var i, listeners;
     listeners = this._getListeners(type);
     i = listeners.indexOf(listener);
     if (i !== -1) {
-      listeners.slice(i, 1);
+      listeners.splice(i, 1);
     }
     return this;
   };
 
-  EventTrigger.prototype.offAll = function(type) {
-    if (type) {
-      this._listenersByType[type] = [];
+  EventTrigger.prototype.offAll = function(target) {
+    var i, listeners, type, _ref;
+    if (typeof target === "string") {
+      if (target) {
+        this._listenersByType[target] = [];
+      }
+    } else if (typeof target === "function") {
+      _ref = this._listenersByType;
+      for (type in _ref) {
+        listeners = _ref[type];
+        i = listeners.indexOf(target);
+        if (i !== -1) {
+          listeners.splice(i, 1);
+        }
+      }
     } else {
       this._listenersByType = {};
     }
@@ -9410,8 +9436,8 @@ transformPrefix = firstSupportedStylePrefix(["transform", "msTransform", "MozTra
 View = (function() {
   function View() {
     this.recycle = __bind(this.recycle, this);
-    this.onEngineDestroy = __bind(this.onEngineDestroy, this);
     this.attach = __bind(this.attach, this);
+    this.values = {};
     this;
   }
 
@@ -9426,25 +9452,6 @@ View = (function() {
     }
     View.byId[this.id] = this;
     return this.is_positioned = false;
-    /*
-    @engine = GSS.get.nearestEngine(@el)
-    console.log GSS.get.nearestEngine(@el)
-    @engine.on "beforeDestroy", @onEngineDestroy
-    */
-
-  };
-
-  /*
-  setEngineIfNeeded: (engine) ->
-    if !@engine
-      @engine = engine
-      @engine.on "beforeDestroy", @onEngineDestroy
-  */
-
-
-  View.prototype.onEngineDestroy = function() {
-    this.engine.off("beforeDestroy", this.onEngineDestroy);
-    return GSS._id_killed(this.id);
   };
 
   View.prototype.recycle = function() {
@@ -9455,16 +9462,18 @@ View = (function() {
     this.id = null;
     this.offsets = null;
     this.style = null;
+    this.values = {};
     return View.recycled.push(this);
   };
 
   View.prototype.is_positioned = false;
 
   View.prototype.setupForPositioning = function() {
-    this.updateOffsets();
     if (!this.is_positioned) {
       this.style.position = 'absolute';
       this.style.margin = '0px';
+      this.style.top = '0px';
+      this.style.left = '0px';
     }
     return this.is_positioned = true;
   };
@@ -9501,8 +9510,26 @@ View = (function() {
     return offsets;
   };
 
-  View.prototype.display = function() {
-    var key, val, _ref, _results;
+  View.prototype.needsDisplay = false;
+
+  View.prototype.display = function(offsets) {
+    var key, o, val, _ref, _results;
+    o = this.values;
+    if ((o.x != null) || (o.y != null)) {
+      this.style[transformPrefix] = "";
+      if (o.x) {
+        this.style[transformPrefix] += " translateX(" + (o.x - offsets.x) + "px)";
+      }
+      if (o.y) {
+        this.style[transformPrefix] += " translateY(" + (o.y - offsets.y) + "px)";
+      }
+    }
+    if (o.width != null) {
+      this.style.width = o.width + "px";
+    }
+    if (o.height != null) {
+      this.style.height = o.height + "px";
+    }
     _ref = this.style;
     _results = [];
     for (key in _ref) {
@@ -9512,24 +9539,77 @@ View = (function() {
     return _results;
   };
 
-  View.prototype.setCSS = function(o) {
+  View.prototype.displayIfNeeded = function(offsets) {
+    if (offsets == null) {
+      offsets = {
+        x: 0,
+        y: 0
+      };
+    }
+    if (this.needsDisplay) {
+      this.display(offsets);
+      this.setNeedsDisplay(false);
+    }
+    offsets = {
+      x: 0,
+      y: 0
+    };
+    if (this.values.x) {
+      offsets.x += this.values.x;
+    }
+    if (this.values.y) {
+      offsets.y += this.values.y;
+    }
+    return this._displayChildrenIfNeeded(offsets);
+  };
+
+  View.prototype.setNeedsDisplay = function(bool) {
+    if (bool) {
+      return this.needsDisplay = true;
+    } else {
+      return this.needsDisplay = false;
+    }
+  };
+
+  View.prototype._displayChildrenIfNeeded = function(offsets) {
+    var child, view, _i, _len, _ref, _results;
+    _ref = this.el.children;
+    _results = [];
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      child = _ref[_i];
+      view = GSS.get.view(child);
+      if (view) {
+        _results.push(view.displayIfNeeded(offsets));
+      } else {
+        _results.push(void 0);
+      }
+    }
+    return _results;
+  };
+
+  View.prototype.updateValues = function(o) {
+    this.values = o;
     this.style = {};
     if ((o.x != null) || (o.y != null)) {
       this.setupForPositioning();
-      if (o.x) {
-        this.style.left = o.x - this.offsets.x + "px";
-      }
-      if (o.y) {
-        this.style.top = o.y - this.offsets.y + "px";
-      }
     }
-    if (o.width != null) {
-      this.style.width = o.width + "px";
-    }
-    if (o.height != null) {
-      this.style.height = o.height + "px";
-    }
+    this.setNeedsDisplay(true);
     return this;
+  };
+
+  View.prototype.getParentView = function() {
+    var el, gid;
+    el = this.el.parentElement;
+    while (true) {
+      gid = el._gss_id;
+      if (gid) {
+        return View.byId[gid];
+      }
+      if (!el.parentElement) {
+        break;
+      }
+      el = el.parentElement;
+    }
   };
 
   return View;
@@ -9558,114 +9638,121 @@ module.exports = View;
 
 });
 require.register("the-gss-engine/lib/dom/Observer.js", function(exports, require, module){
-var LOG, observer,
+var LOG, observer, setupObserver,
   __slice = [].slice;
 
 LOG = function() {
   return GSS.deblog.apply(GSS, ["Observer"].concat(__slice.call(arguments)));
 };
 
-if (!window.MutationObserver) {
-  window.MutationObserver = window.JsMutationObserver;
-}
+observer = null;
 
-observer = new MutationObserver(function(mutations) {
-  var engine, gid, invalidMeasureIds, m, nodesToIgnore, scope, scopesToLoad, scopesToUpdateChildList, target, _i, _j, _k, _l, _len, _len1, _len2, _len3, _ref;
-  LOG("MutationObserver");
-  scopesToLoad = [];
-  nodesToIgnore = [];
-  scopesToUpdateChildList = [];
-  invalidMeasureIds = [];
-  for (_i = 0, _len = mutations.length; _i < _len; _i++) {
-    m = mutations[_i];
-    if (m.type === "characterData") {
-      if (GSS.get.isStyleNode(m.target.parentElement)) {
-        scope = GSS.get.scopeForStyleNode(m.target.parentElement);
-        if (scopesToLoad.indexOf(scope) === -1) {
-          scopesToLoad.push(scope);
+setupObserver = function() {
+  if (!window.MutationObserver) {
+    if (window.WebKitMutationObserver) {
+      window.MutationObserver = window.WebKitMutationObserver;
+    } else {
+      window.MutationObserver = window.JsMutationObserver;
+    }
+  }
+  return observer = new MutationObserver(function(mutations) {
+    var engine, gid, invalidMeasureIds, m, nodesToIgnore, scope, scopesToLoad, scopesToUpdateChildList, target, _i, _j, _k, _l, _len, _len1, _len2, _len3, _ref;
+    LOG("MutationObserver");
+    scopesToLoad = [];
+    nodesToIgnore = [];
+    scopesToUpdateChildList = [];
+    invalidMeasureIds = [];
+    for (_i = 0, _len = mutations.length; _i < _len; _i++) {
+      m = mutations[_i];
+      if (m.type === "characterData") {
+        if (GSS.get.isStyleNode(m.target.parentElement)) {
+          scope = GSS.get.scopeForStyleNode(m.target.parentElement);
+          if (scopesToLoad.indexOf(scope) === -1) {
+            scopesToLoad.push(scope);
+          }
         }
       }
-    }
-    if (m.type === "attributes" || m.type === "childList") {
-      if (m.type === "attributes" && m.attributename === "data-gss-id") {
-        nodesToIgnore.push(m.target);
-      } else if (nodesToIgnore.indexOf(m.target) === -1) {
-        scope = GSS.get.nearestScope(m.target);
-        if (scope) {
-          if (scopesToUpdateChildList.indexOf(scope) === -1) {
-            scopesToUpdateChildList.push(scope);
+      if (m.type === "attributes" || m.type === "childList") {
+        if (m.type === "attributes" && m.attributename === "data-gss-id") {
+          nodesToIgnore.push(m.target);
+        } else if (nodesToIgnore.indexOf(m.target) === -1) {
+          scope = GSS.get.nearestScope(m.target);
+          if (scope) {
+            if (scopesToUpdateChildList.indexOf(scope) === -1) {
+              scopesToUpdateChildList.push(scope);
+            }
+          }
+        }
+      }
+      gid = null;
+      if (m.type === "characterData" || m.type === "attributes" || m.type === "childList") {
+        if (m.type === "characterData") {
+          target = m.target.parentElement;
+          gid = "$" + GSS.getId(m.target.parentElement);
+        } else if (nodesToIgnore.indexOf(m.target) === -1) {
+          gid = "$" + GSS.getId(m.target);
+        }
+        if (gid != null) {
+          if (invalidMeasureIds.indexOf(gid) === -1) {
+            invalidMeasureIds.push(gid);
           }
         }
       }
     }
-    gid = null;
-    if (m.type === "characterData" || m.type === "attributes" || m.type === "childList") {
-      if (m.type === "characterData") {
-        target = m.target.parentElement;
-        gid = "$" + GSS.getId(m.target.parentElement);
-      } else if (nodesToIgnore.indexOf(m.target) === -1) {
-        gid = "$" + GSS.getId(m.target);
-      }
-      if (gid != null) {
-        if (invalidMeasureIds.indexOf(gid) === -1) {
-          invalidMeasureIds.push(gid);
-        }
+    for (_j = 0, _len1 = scopesToLoad.length; _j < _len1; _j++) {
+      scope = scopesToLoad[_j];
+      GSS.get.engine(scope).load();
+    }
+    for (_k = 0, _len2 = scopesToUpdateChildList.length; _k < _len2; _k++) {
+      scope = scopesToUpdateChildList[_k];
+      if (scopesToLoad.indexOf(scope) === -1) {
+        GSS.get.engine(scope).updateChildList();
       }
     }
-  }
-  for (_j = 0, _len1 = scopesToLoad.length; _j < _len1; _j++) {
-    scope = scopesToLoad[_j];
-    GSS.get.engine(scope).load();
-  }
-  for (_k = 0, _len2 = scopesToUpdateChildList.length; _k < _len2; _k++) {
-    scope = scopesToUpdateChildList[_k];
-    if (scopesToLoad.indexOf(scope) === -1) {
-      GSS.get.engine(scope).updateChildList();
+    if (invalidMeasureIds.length > 0) {
+      _ref = GSS.engines;
+      for (_l = 0, _len3 = _ref.length; _l < _len3; _l++) {
+        engine = _ref[_l];
+        engine.commander.handleInvalidMeasures(invalidMeasureIds);
+      }
     }
-  }
-  if (invalidMeasureIds.length > 0) {
-    _ref = GSS.engines;
-    for (_l = 0, _len3 = _ref.length; _l < _len3; _l++) {
-      engine = _ref[_l];
-      engine.commander.handleInvalidMeasures(invalidMeasureIds);
-    }
-  }
-  scopesToLoad = null;
-  nodesToIgnore = null;
-  scopesToUpdateChildList = null;
-  invalidMeasureIds = null;
-  /*
-  for m in mutations
-    # els removed from scope
-    if m.removedNodes.length > 0 # nodelist are weird?
-      for node in m.removedNodes
-        # destroy engines
-        if node._gss_is_scope
-          GSS.get.engine(node).destroy()      
+    scopesToLoad = null;
+    nodesToIgnore = null;
+    scopesToUpdateChildList = null;
+    invalidMeasureIds = null;
+    /*
+    for m in mutations
+      # els removed from scope
+      if m.removedNodes.length > 0 # nodelist are weird?
+        for node in m.removedNodes
+          # destroy engines
+          if node._gss_is_scope
+            GSS.get.engine(node).destroy()      
         
-        ## scopes with removed ASTs
-        #if GSS.get.isStyleNode node
-        #  scope = GSS.get.scopeForStyleNode node
-        #  if scopesToLoad.indexOf(scope) is -1 and scope
-        #    scopesToLoad.push scope  
-        #
+          ## scopes with removed ASTs
+          #if GSS.get.isStyleNode node
+          #  scope = GSS.get.scopeForStyleNode node
+          #  if scopesToLoad.indexOf(scope) is -1 and scope
+          #    scopesToLoad.push scope  
+          #
         
     
-    ## els removed from scope
-    #if m.addedNodes.length > 0 # nodelist are weird?
-    #  for node in m.addedNodes        
-    #    # scopes with new ASTs        
-    #    if GSS.get.isStyleNode node
-    #      scope = GSS.get.scopeForStyleNode node
-    #      if scopesToLoad.indexOf(scope) is -1
-    #        scopesToLoad.push scope
-    #
-    #for scope in scopesToLoad
-    #  GSS(scope).load()
-  */
+      ## els removed from scope
+      #if m.addedNodes.length > 0 # nodelist are weird?
+      #  for node in m.addedNodes        
+      #    # scopes with new ASTs        
+      #    if GSS.get.isStyleNode node
+      #      scope = GSS.get.scopeForStyleNode node
+      #      if scopesToLoad.indexOf(scope) is -1
+      #        scopesToLoad.push scope
+      #
+      #for scope in scopesToLoad
+      #  GSS(scope).load()
+    */
 
-  return GSS.load();
-});
+    return GSS.load();
+  });
+};
 
 GSS.is_observing = false;
 
@@ -9687,10 +9774,12 @@ GSS.unobserve = function() {
 };
 
 document.addEventListener("DOMContentLoaded", function(e) {
+  setupObserver();
   GSS.boot();
   LOG("DOMContentLoaded");
   GSS.load();
-  return GSS.observe();
+  GSS.observe();
+  return GSS.trigger("afterLoaded");
 });
 
 module.exports = observer;
@@ -9786,10 +9875,10 @@ Engine = (function(_super) {
       this.queryScope = this.scope;
     }
     if (!this.getter) {
-      this.getter = new GSS.Getter(this.queryScope);
+      this.getter = new GSS.Getter(this.scope);
     }
     if (!this.setter) {
-      this.setter = new GSS.Setter(this.queryScope);
+      this.setter = new GSS.Setter(this.scope);
     }
     this.childEngines = [];
     this.parentEngine = null;
@@ -10249,9 +10338,9 @@ Engine = (function(_super) {
     return this.scope.dispatchEvent(e);
   };
 
-  Engine.prototype.handleError = function(error) {
+  Engine.prototype.handleError = function(event) {
     if (this.onError) {
-      return this.onError(error);
+      return this.onError(event);
     }
     throw new Error("" + event.message + " (" + event.filename + ":" + event.lineno + ")");
   };
@@ -11223,6 +11312,10 @@ Getter = (function() {
     return offsets;
   };
 
+  Getter.prototype.view = function(node) {
+    return GSS.View.byId[GSS.getId(node)];
+  };
+
   Getter.prototype.getAllStyleNodes = function() {
     if (!this.styleNodes) {
       this.styleNodes = this.scope.getElementsByTagName("style");
@@ -11391,7 +11484,7 @@ Setter = (function() {
   };
 
   Setter.prototype.set = function(vars) {
-    var id, obj, varsById, _ref, _ref1, _results;
+    var id, obj, varsById, _ref;
     if (GSS.config.processBeforeSet) {
       vars = GSS.config.processBeforeSet(vars);
     }
@@ -11399,17 +11492,12 @@ Setter = (function() {
     for (id in varsById) {
       obj = varsById[id];
       if ((_ref = GSS.View.byId[id]) != null) {
-        if (typeof _ref.setCSS === "function") {
-          _ref.setCSS(obj);
+        if (typeof _ref.updateValues === "function") {
+          _ref.updateValues(obj);
         }
       }
     }
-    _results = [];
-    for (id in varsById) {
-      obj = varsById[id];
-      _results.push((_ref1 = GSS.View.byId[id]) != null ? typeof _ref1.display === "function" ? _ref1.display() : void 0 : void 0);
-    }
-    return _results;
+    return GSS.get.view(this.scope).displayIfNeeded();
   };
 
   Setter.prototype.varsByViewId = function(vars) {
