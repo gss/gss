@@ -13541,7 +13541,9 @@ GSS.config = {
 if (typeof GSS_CONFIG !== "undefined" && GSS_CONFIG !== null) {
   for (key in GSS_CONFIG) {
     val = GSS_CONFIG[key];
+    console.log(key, val);
     GSS.config[key] = val;
+    console.log(GSS.config[key]);
   }
 }
 
@@ -13817,6 +13819,19 @@ _ = {
       }
       return result;
     };
+  },
+  cloneDeep: function(obj) {
+    return JSON.parse(JSON.stringify(obj));
+  },
+  cloneObject: function(obj) {
+    var i, target;
+    target = {};
+    for (i in obj) {
+      if (obj.hasOwnProperty(i)) {
+        target[i] = obj[i];
+      }
+    }
+    return target;
   },
   filterVarsForDisplay: function(vars) {
     var idx, k, key, keysToKill, obj, val, _i, _len;
@@ -14883,7 +14898,8 @@ Engine = (function(_super) {
   };
 
   Engine.prototype.solveWithoutWorker = function() {
-    var workerMessage;
+    var workerMessage,
+      _this = this;
     LOG(this.id, ".solveWithoutWorker()", this.workerCommands);
     workerMessage = {
       commands: this.workerCommands
@@ -14892,10 +14908,14 @@ Engine = (function(_super) {
     if (!this.worker) {
       this.worker = new GSS.Thread();
     }
-    this.worker.postMessage(workerMessage);
-    this.handleWorkerMessage({
-      data: {
-        values: this.worker.getValues()
+    this.worker.postMessage(_.cloneDeep(workerMessage));
+    _.defer(function() {
+      if (_this.worker) {
+        return _this.handleWorkerMessage({
+          data: {
+            values: _this.worker.getValues()
+          }
+        });
       }
     });
     this.lastWorkerCommands = this.workerCommands;
