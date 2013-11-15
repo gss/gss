@@ -8874,6 +8874,7 @@ GSS.config = {
   roundBeforeSet: false,
   processBeforeSet: null,
   useOffsetParent: true,
+  useWorker: !!window.Worker,
   workerURL: '../browser/gss-engine/worker/gss-solver.js'
 };
 
@@ -8896,6 +8897,25 @@ GSS.warn = function() {
   }
 };
 
+LOG_PASS = function(pass, bg) {
+  if (bg == null) {
+    bg = "green";
+  }
+  return GSS.deblog("%c" + pass, "color:white; padding:2px; font-size:14px; background:" + bg + ";");
+};
+
+TIME = function() {
+  if (GSS.config.perf) {
+    return console.time.apply(console, arguments);
+  }
+};
+
+TIME_END = function() {
+  if (GSS.config.perf) {
+    return console.timeEnd.apply(console, arguments);
+  }
+};
+
 window.GSS = GSS;
 
 GSS._ = require("./_.js");
@@ -8908,7 +8928,7 @@ GSS.Commander = require("./Commander.js");
 
 GSS.Query = require("./dom/Query.js");
 
-GSS.Setter = require("./dom/Setter.js");
+GSS.Thread = require("./Thread.js");
 
 GSS.Engine = require("./Engine.js");
 
@@ -8928,25 +8948,6 @@ GSS.EventTrigger.make(GSS);
 GSS.get = new GSS.Getter();
 
 GSS.observer = require("./dom/Observer.js");
-
-LOG_PASS = function(pass, bg) {
-  if (bg == null) {
-    bg = "green";
-  }
-  return GSS.deblog("%c" + pass, "color:white; padding:2px; font-size:14px; background:" + bg + ";");
-};
-
-TIME = function() {
-  if (GSS.config.perf) {
-    return console.time.apply(console, arguments);
-  }
-};
-
-TIME_END = function() {
-  if (GSS.config.perf) {
-    return console.timeEnd.apply(console, arguments);
-  }
-};
 
 GSS.boot = function() {
   return GSS({
@@ -9097,9 +9098,11 @@ GSS.dirtyLoadEngines = function() {
   engine = GSS.engines[i];
   while (!!engine) {
     if (i > 0) {
-      if (!document.documentElement.contains(engine.scope)) {
-        engine.destroyChildren();
-        engine.destroy();
+      if (engine.scope) {
+        if (!document.documentElement.contains(engine.scope)) {
+          engine.destroyChildren();
+          engine.destroy();
+        }
       }
     }
     i++;
@@ -9154,6 +9157,41 @@ _ = {
       }
       return result;
     };
+  },
+  filterVarsForDisplay: function(vars) {
+    var idx, k, key, keysToKill, obj, val, _i, _len;
+    obj = {};
+    keysToKill = [];
+    for (key in vars) {
+      val = vars[key];
+      idx = key.indexOf("intrinsic-");
+      if (idx !== -1) {
+        keysToKill.push(key.replace("intrinsic-", ""));
+      } else {
+        obj[key] = val;
+      }
+    }
+    for (_i = 0, _len = keysToKill.length; _i < _len; _i++) {
+      k = keysToKill[_i];
+      delete obj[k];
+    }
+    return obj;
+  },
+  varsByViewId: function(vars) {
+    var gid, key, prop, val, varsById;
+    varsById = {};
+    for (key in vars) {
+      val = vars[key];
+      if (key[0] === "$") {
+        gid = key.substring(1, key.indexOf("["));
+        if (!varsById[gid]) {
+          varsById[gid] = {};
+        }
+        prop = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
+        varsById[gid][prop] = val;
+      }
+    }
+    return varsById;
   }
 };
 
@@ -9656,11 +9694,11 @@ setupObserver = function() {
     }
   }
   return observer = new MutationObserver(function(mutations) {
-    var engine, gid, invalidMeasureIds, m, nodesToIgnore, scope, scopesToLoad, scopesToUpdateChildList, target, _i, _j, _k, _l, _len, _len1, _len2, _len3, _ref;
+    var engine, gid, invalidMeasureIds, m, needsUpdateQueries, nodesToIgnore, scope, scopesToLoad, target, _i, _j, _k, _l, _len, _len1, _len2, _len3, _ref;
     LOG("MutationObserver");
     scopesToLoad = [];
     nodesToIgnore = [];
-    scopesToUpdateChildList = [];
+    needsUpdateQueries = [];
     invalidMeasureIds = [];
     for (_i = 0, _len = mutations.length; _i < _len; _i++) {
       m = mutations[_i];
@@ -9678,8 +9716,8 @@ setupObserver = function() {
         } else if (nodesToIgnore.indexOf(m.target) === -1) {
           scope = GSS.get.nearestScope(m.target);
           if (scope) {
-            if (scopesToUpdateChildList.indexOf(scope) === -1) {
-              scopesToUpdateChildList.push(scope);
+            if (needsUpdateQueries.indexOf(scope) === -1) {
+              needsUpdateQueries.push(scope);
             }
           }
         }
@@ -9703,10 +9741,10 @@ setupObserver = function() {
       scope = scopesToLoad[_j];
       GSS.get.engine(scope).load();
     }
-    for (_k = 0, _len2 = scopesToUpdateChildList.length; _k < _len2; _k++) {
-      scope = scopesToUpdateChildList[_k];
+    for (_k = 0, _len2 = needsUpdateQueries.length; _k < _len2; _k++) {
+      scope = needsUpdateQueries[_k];
       if (scopesToLoad.indexOf(scope) === -1) {
-        GSS.get.engine(scope).updateChildList();
+        GSS.get.engine(scope).updateQueries();
       }
     }
     if (invalidMeasureIds.length > 0) {
@@ -9718,7 +9756,7 @@ setupObserver = function() {
     }
     scopesToLoad = null;
     nodesToIgnore = null;
-    scopesToUpdateChildList = null;
+    needsUpdateQueries = null;
     invalidMeasureIds = null;
     /*
     for m in mutations
@@ -9786,7 +9824,7 @@ module.exports = observer;
 
 });
 require.register("the-gss-engine/lib/Engine.js", function(exports, require, module){
-var Engine, LOG, TIME, TIME_END, cleanAndSnatch, engines,
+var Engine, LOG, TIME, TIME_END, engines, _,
   __slice = [].slice,
   __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
   __hasProp = {}.hasOwnProperty,
@@ -9796,24 +9834,7 @@ if (typeof GSS === "undefined" || GSS === null) {
   throw new Error("GSS object needed for Engine");
 }
 
-cleanAndSnatch = function(frm, to) {
-  var key, val;
-  for (key in to) {
-    val = to[key];
-    if (frm[key] == null) {
-      delete to[key];
-    } else {
-      to[key] = frm[key];
-      delete frm[key];
-    }
-  }
-  for (key in frm) {
-    val = frm[key];
-    to[key] = frm[key];
-  }
-  frm = void 0;
-  return to;
-};
+_ = GSS._;
 
 TIME = function() {
   if (GSS.config.perf) {
@@ -9841,60 +9862,68 @@ Engine = (function(_super) {
   __extends(Engine, _super);
 
   function Engine(o) {
+    if (o == null) {
+      o = {};
+    }
     this.dispatch = __bind(this.dispatch, this);
+    this.updateQueries = __bind(this.updateQueries, this);
     this.handleWorkerMessage = __bind(this.handleWorkerMessage, this);
-    this.updateChildList = __bind(this.updateChildList, this);
     this.load = __bind(this.load, this);
     this.execute = __bind(this.execute, this);
     Engine.__super__.constructor.apply(this, arguments);
-    this.scope = o.scope, this.workerURL = o.workerURL, this.vars = o.vars, this.getter = o.getter, this.setter = o.setter, this.is_root = o.is_root;
+    this.scope = o.scope, this.workerURL = o.workerURL, this.vars = o.vars, this.getter = o.getter, this.is_root = o.is_root, this.useWorker = o.useWorker;
     if (!this.vars) {
       this.vars = {};
     }
-    if (!this.scope) {
-      new Error("Scope required for Engine");
+    if (!GSS.config.useWorker) {
+      this.useWorker = false;
+    } else {
+      if (this.useWorker == null) {
+        this.useWorker = true;
+      }
     }
-    if (this.scope.tagName === "HEAD") {
-      this.scope = document;
-    }
-    if (!this.workerURL) {
-      this.workerURL = GSS.config.workerURL;
-    }
-    this.id = GSS.setupScopeId(this.scope);
-    this.commander = new GSS.Commander(this);
     this.worker = null;
     this.workerCommands = [];
     this.workerMessageHistory = [];
-    this.lastWorkerCommands = null;
-    this.queryCache = {};
-    this.cssDump = null;
-    LOG("constructor() @", this);
-    if (this.scope === GSS.Getter.getRootScope()) {
-      this.queryScope = document;
+    if (!this.workerURL) {
+      this.workerURL = GSS.config.workerURL;
+    }
+    if (this.scope) {
+      if (this.scope.tagName === "HEAD") {
+        this.scope = document;
+      }
+      this.id = GSS.setupScopeId(this.scope);
+      if (this.scope === GSS.Getter.getRootScope()) {
+        this.queryScope = document;
+      } else {
+        this.queryScope = this.scope;
+      }
     } else {
-      this.queryScope = this.scope;
+      this.id = GSS.uid();
+      this.queryScope = document;
     }
     if (!this.getter) {
       this.getter = new GSS.Getter(this.scope);
     }
-    if (!this.setter) {
-      this.setter = new GSS.Setter(this.scope);
-    }
-    this.childEngines = [];
-    this.parentEngine = null;
-    if (this.is_root) {
-      engines.root = this;
-    } else {
-      this.parentEngine = GSS.get.nearestEngine(this.scope, true);
-      if (!this.parentEngine) {
-        throw new Error("ParentEngine missing, WTF");
-      }
-      this.parentEngine.childEngines.push(this);
-    }
+    this.commander = new GSS.Commander(this);
+    this.lastWorkerCommands = null;
+    this.queryCache = {};
+    this.cssDump = null;
     GSS.engines.push(this);
     engines.byId[this.id] = this;
+    this._Hierarchy_setup();
+    LOG("constructor() @", this);
     this;
   }
+
+  Engine.prototype.getVarsById = function() {
+    var vars, varsById;
+    vars = this.vars;
+    if (GSS.config.processBeforeSet) {
+      vars = GSS.config.processBeforeSet(vars);
+    }
+    return varsById = _.varsByViewId(_.filterVarsForDisplay(vars));
+  };
 
   Engine.prototype.isDescendantOf = function(engine) {
     var parentEngine;
@@ -9908,7 +9937,27 @@ Engine = (function(_super) {
     return false;
   };
 
-  Engine.prototype.isAscendantOf = function(engine) {};
+  Engine.prototype._Hierarchy_setup = function() {
+    var _ref;
+    this.childEngines = [];
+    this.parentEngine = null;
+    if (this.is_root) {
+      engines.root = this;
+    } else if (this.scope) {
+      this.parentEngine = GSS.get.nearestEngine(this.scope, true);
+    } else {
+      this.parentEngine = engines.root;
+    }
+    if (!this.parentEngine && !this.is_root) {
+      throw new Error("ParentEngine missing, WTF");
+    }
+    return (_ref = this.parentEngine) != null ? _ref.childEngines.push(this) : void 0;
+  };
+
+  Engine.prototype._Hierarchy_destroy = function() {
+    this.parentEngine.childEngines.splice(this.parentEngine.childEngines.indexOf(this), 1);
+    return this.parentEngine = null;
+  };
 
   Engine.prototype.is_running = false;
 
@@ -9941,15 +9990,42 @@ Engine = (function(_super) {
     return this.commander.execute(commands);
   };
 
+  Engine.prototype.load = function() {
+    var AST, ASTs, node, _i, _len, _ref;
+    LOG(this.id, ".loadASTs()");
+    if (!this.scope) {
+      throw new Error("can't load scopeless engine");
+    }
+    if (this.is_running) {
+      this.clean();
+    }
+    ASTs = [];
+    _ref = this.getter.getAllStyleNodes();
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      node = _ref[_i];
+      if (this.scope === GSS.get.scopeForStyleNode(node)) {
+        AST = this.getter.readAST(node);
+        if (AST) {
+          ASTs.push(AST);
+        }
+      }
+    }
+    this.ASTs = ASTs;
+    this.setNeedsUpdate(true);
+    return this;
+  };
+
   Engine.prototype.cssToDump = null;
 
   Engine.prototype.cssDump = null;
 
   Engine.prototype.setupCSSDumpIfNeeded = function() {
+    var dumpNode;
+    dumpNode = this.scope || document.body;
     if (!this.cssDump) {
       this.cssDump = document.createElement("style");
       this.cssDump.id = "gss-css-dump-" + this.id;
-      return this.scope.appendChild(this.cssDump);
+      return dumpNode.appendChild(this.cssDump);
     }
   };
 
@@ -9961,20 +10037,15 @@ Engine = (function(_super) {
     }
   };
 
-  Engine.prototype.CSSDumper_clean = function() {
+  Engine.prototype._CSSDumper_clean = function() {
     var _ref;
     this.cssToDump = null;
     return (_ref = this.cssDump) != null ? _ref.innerHTML = "" : void 0;
   };
 
-  Engine.prototype.CSSDumper_destroy = function() {
+  Engine.prototype._CSSDumper_destroy = function() {
     this.cssToDump = null;
     return this.cssDump = null;
-  };
-
-  Engine.prototype.hoistedTrigger = function(ev, obj) {
-    this.trigger(ev, obj);
-    return GSS.trigger("engine:" + ev, obj);
   };
 
   Engine.prototype.needsUpdate = false;
@@ -10035,7 +10106,6 @@ Engine = (function(_super) {
   Engine.prototype.layoutIfNeeded = function() {
     LOG(this.id, ".layoutIfNeeded()");
     if (this.needsLayout) {
-      this.waitingToLayoutSubtree = true;
       this.layout();
     }
     return this.layoutSubTreeIfNeeded();
@@ -10070,6 +10140,7 @@ Engine = (function(_super) {
 
   Engine.prototype.displayIfNeeded = function() {
     var child, _i, _len, _ref, _results;
+    LOG(this, "displayIfNeeded");
     if (this.needsDisplay) {
       this.display();
       this.setNeedsDisplay(false);
@@ -10084,169 +10155,58 @@ Engine = (function(_super) {
   };
 
   Engine.prototype.display = function() {
+    var id, needsToDisplayViews, obj, varsById, _ref;
     LOG(this.id, ".display()");
     this.hoistedTrigger("beforeDisplay", this);
     GSS.unobserve();
-    this.setter.set(this.vars);
+    varsById = this.getVarsById();
+    needsToDisplayViews = false;
+    for (id in varsById) {
+      obj = varsById[id];
+      needsToDisplayViews = true;
+      if ((_ref = GSS.View.byId[id]) != null) {
+        if (typeof _ref.updateValues === "function") {
+          _ref.updateValues(obj);
+        }
+      }
+    }
+    if (needsToDisplayViews) {
+      if (this.scope) {
+        GSS.get.view(this.scope).displayIfNeeded();
+      }
+    }
     this.validate();
     GSS.observe();
-    this.dispatch("solved", {
+    this.dispatchedTrigger("solved", {
       values: this.vars
     });
-    return TIME_END("" + this.id + " DISPLAY PASS");
+    TIME_END("" + this.id + " DISPLAY PASS");
+    return this;
   };
 
   Engine.prototype.validate = function() {
     return this.commander.validateMeasures();
   };
 
-  Engine.prototype.load = function() {
-    var AST, ASTs, node, _i, _len, _ref;
-    LOG(this.id, ".loadASTs()");
-    if (this.is_running) {
-      this.clean();
-    }
-    ASTs = [];
-    _ref = this.getter.getAllStyleNodes();
-    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-      node = _ref[_i];
-      if (this.scope === GSS.get.scopeForStyleNode(node)) {
-        AST = this.getter.readAST(node);
-        if (AST) {
-          ASTs.push(AST);
-        }
-      }
-    }
-    this.ASTs = ASTs;
-    this.setNeedsUpdate(true);
-    return this;
+  Engine.prototype.measureByGssId = function(id, prop) {
+    var el, val;
+    el = GSS.getById(id);
+    val = this.getter.measure(el, prop);
+    LOG(this.id, ".measureByGssId()", id, prop, val);
+    return val;
   };
-
-  Engine.prototype.clean = function() {
-    var key, query, selector, val, _base, _base1, _ref, _ref1;
-    LOG(this.id, ".clean()");
-    this.offAll();
-    this.setNeedsLayout(false);
-    this.setNeedsDisplay(false);
-    this.setNeedsLayout(false);
-    this.waitingToLayoutSubtree = false;
-    this.commander.clean();
-    if (typeof (_base = this.getter).clean === "function") {
-      _base.clean();
-    }
-    if (typeof (_base1 = this.setter).clean === "function") {
-      _base1.clean();
-    }
-    this.CSSDumper_clean();
-    this.workerCommands = [];
-    this.lastWorkerCommands = null;
-    _ref = this.vars;
-    for (key in _ref) {
-      val = _ref[key];
-      delete this.vars[key];
-    }
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-    }
-    _ref1 = this.queryCache;
-    for (selector in _ref1) {
-      query = _ref1[selector];
-      query.destroy();
-      this.queryCache[selector] = null;
-    }
-    this.queryCache = {};
-    return this;
-  };
-
-  Engine.prototype.stopped = false;
-
-  Engine.prototype.stop = function() {
-    console.warn("Stop deprecated for destroy");
-    this.destroy();
-    return this;
-  };
-
-  Engine.prototype.is_destroyed = false;
-
-  Engine.prototype.destroyChildren = function() {
-    var e, _i, _len, _ref, _results;
-    _ref = this.childEngines;
-    _results = [];
-    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
-      e = _ref[_i];
-      if (!e.is_destroyed) {
-        _results.push(e.destroy());
-      } else {
-        _results.push(void 0);
-      }
-    }
-    return _results;
-  };
-
-  Engine.prototype.destroy = function() {
-    var d, descdendants, i, kill, query, selector, _base, _base1, _i, _len, _ref;
-    LOG(this.id, ".destroy()");
-    this.hoistedTrigger("beforeDestroy", this);
-    descdendants = GSS.get.descdendantNodes(this.scope);
-    for (_i = 0, _len = descdendants.length; _i < _len; _i++) {
-      d = descdendants[_i];
-      kill = d._gss_id;
-      if (kill) {
-        GSS._id_killed(kill);
-      }
-    }
-    this.offAll();
-    this.setNeedsLayout(false);
-    this.setNeedsDisplay(false);
-    this.setNeedsLayout(false);
-    this.waitingToLayoutSubtree = false;
-    this.is_destroyed = true;
-    this.is_running = null;
-    this.commander.destroy();
-    if (typeof (_base = this.getter).destroy === "function") {
-      _base.destroy();
-    }
-    if (typeof (_base1 = this.setter).destroy === "function") {
-      _base1.destroy();
-    }
-    this.parentEngine.childEngines.splice(this.parentEngine.childEngines.indexOf(this), 1);
-    this.parentEngine = null;
-    i = engines.indexOf(this);
-    if (i > -1) {
-      engines.splice(i, 1);
-    }
-    delete engines.byId[this.id];
-    GSS._ids_killed([this.id]);
-    this.CSSDumper_destroy();
-    this.ast = null;
-    this.getter = null;
-    this.setter = null;
-    this.scope = null;
-    this.commander = null;
-    this.workerCommands = null;
-    this.workerMessageHistory = null;
-    this.lastWorkerCommands = null;
-    this.vars = null;
-    if (this.worker) {
-      this.worker.terminate();
-      this.worker = null;
-    }
-    _ref = this.queryCache;
-    for (selector in _ref) {
-      query = _ref[selector];
-      query.destroy();
-      this.queryCache[selector] = null;
-    }
-    this.queryCache = null;
-    return this;
-  };
-
-  Engine.prototype.is_observing = false;
 
   Engine.prototype.solve = function() {
+    if (this.useWorker) {
+      return this.solveWithWorker();
+    } else {
+      return this.solveWithoutWorker();
+    }
+  };
+
+  Engine.prototype.solveWithWorker = function() {
     var workerMessage;
-    LOG(this.id, ".solve()", this.workerCommands);
+    LOG(this.id, ".solveWithWorker()", this.workerCommands);
     TIME("" + this.id + " DISPLAY PASS");
     workerMessage = {
       commands: this.workerCommands
@@ -10262,7 +10222,72 @@ Engine = (function(_super) {
     return this.workerCommands = [];
   };
 
-  Engine.prototype.updateChildList = function() {
+  Engine.prototype.solveWithoutWorker = function() {
+    var workerMessage;
+    LOG(this.id, ".solveWithoutWorker()", this.workerCommands);
+    workerMessage = {
+      commands: this.workerCommands
+    };
+    this.workerMessageHistory.push(workerMessage);
+    if (!this.worker) {
+      this.worker = new GSS.Thread();
+    }
+    this.worker.postMessage(workerMessage);
+    this.handleWorkerMessage({
+      data: {
+        values: this.worker.getValues()
+      }
+    });
+    this.lastWorkerCommands = this.workerCommands;
+    return this.workerCommands = [];
+  };
+
+  Engine.prototype.handleWorkerMessage = function(message) {
+    LOG(this.id, ".handleWorkerMessage()", this.workerCommands);
+    this.vars = message.data.values;
+    return this.display();
+  };
+
+  Engine.prototype.handleError = function(event) {
+    if (this.onError) {
+      return this.onError(event);
+    }
+    throw new Error("" + event.message + " (" + event.filename + ":" + event.lineno + ")");
+  };
+
+  Engine.prototype._Worker_destroy = function() {
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+    this.workerCommands = null;
+    this.workerMessageHistory = null;
+    return this.lastWorkerCommands = null;
+  };
+
+  Engine.prototype._Worker_clean = function() {
+    this.workerCommands = [];
+    this.lastWorkerCommands = null;
+    if (this.worker) {
+      this.worker.terminate();
+      return this.worker = null;
+    }
+  };
+
+  Engine.prototype.registerDomQuery = function(o) {
+    var query, selector;
+    selector = o.selector;
+    if (this.queryCache[selector] != null) {
+      return this.queryCache[selector];
+    } else {
+      query = new GSS.Query(o);
+      query.update();
+      this.queryCache[selector] = query;
+      return query;
+    }
+  };
+
+  Engine.prototype.updateQueries = function() {
     var el, globalRemoves, query, removedIds, removes, rid, selector, selectorsWithAdds, trigger, _i, _len, _ref;
     selectorsWithAdds = [];
     removes = [];
@@ -10303,18 +10328,36 @@ Engine = (function(_super) {
     }
   };
 
-  Engine.prototype.measureByGssId = function(id, prop) {
-    var el, val;
-    el = GSS.getById(id);
-    val = this.getter.measure(el, prop);
-    LOG(this.id, ".measureByGssId()", id, prop, val);
-    return val;
+  Engine.prototype._Queries_destroy = function() {
+    var query, selector, _ref;
+    _ref = this.queryCache;
+    for (selector in _ref) {
+      query = _ref[selector];
+      query.destroy();
+      this.queryCache[selector] = null;
+    }
+    return this.queryCache = null;
   };
 
-  Engine.prototype.handleWorkerMessage = function(message) {
-    LOG(this.id, ".handleWorkerMessage()", this.workerCommands);
-    this.vars = message.data.values;
-    return this.display();
+  Engine.prototype._Queries_clean = function() {
+    var query, selector, _ref;
+    _ref = this.queryCache;
+    for (selector in _ref) {
+      query = _ref[selector];
+      query.destroy();
+      this.queryCache[selector] = null;
+    }
+    return this.queryCache = {};
+  };
+
+  Engine.prototype.hoistedTrigger = function(ev, obj) {
+    this.trigger(ev, obj);
+    return GSS.trigger("engine:" + ev, obj);
+  };
+
+  Engine.prototype.dispatchedTrigger = function(e, o, b, c) {
+    this.trigger(e, o);
+    return this.dispatch(e, o, b, c);
   };
 
   Engine.prototype.dispatch = function(eName, oDetail, bubbles, cancelable) {
@@ -10328,6 +10371,9 @@ Engine = (function(_super) {
     if (cancelable == null) {
       cancelable = true;
     }
+    if (!this.scope) {
+      return;
+    }
     oDetail.engine = this;
     o = {
       detail: oDetail,
@@ -10336,13 +10382,6 @@ Engine = (function(_super) {
     };
     e = new CustomEvent(eName, o);
     return this.scope.dispatchEvent(e);
-  };
-
-  Engine.prototype.handleError = function(event) {
-    if (this.onError) {
-      return this.onError(event);
-    }
-    throw new Error("" + event.message + " (" + event.filename + ":" + event.lineno + ")");
   };
 
   Engine.prototype.registerCommands = function(commands) {
@@ -10361,17 +10400,87 @@ Engine = (function(_super) {
     return this;
   };
 
-  Engine.prototype.registerDomQuery = function(o) {
-    var query, selector;
-    selector = o.selector;
-    if (this.queryCache[selector] != null) {
-      return this.queryCache[selector];
-    } else {
-      query = new GSS.Query(o);
-      query.update();
-      this.queryCache[selector] = query;
-      return query;
+  Engine.prototype.clean = function() {
+    var key, val, _base, _ref;
+    LOG(this.id, ".clean()");
+    this.offAll();
+    _ref = this.vars;
+    for (key in _ref) {
+      val = _ref[key];
+      delete this.vars[key];
     }
+    this.setNeedsLayout(false);
+    this.setNeedsDisplay(false);
+    this.setNeedsLayout(false);
+    this.waitingToLayoutSubtree = false;
+    this.commander.clean();
+    if (typeof (_base = this.getter).clean === "function") {
+      _base.clean();
+    }
+    this._CSSDumper_clean();
+    this._Worker_clean();
+    this._Queries_clean();
+    return this;
+  };
+
+  Engine.prototype.is_destroyed = false;
+
+  Engine.prototype.destroyChildren = function() {
+    var e, _i, _len, _ref, _results;
+    _ref = this.childEngines;
+    _results = [];
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      e = _ref[_i];
+      if (!e.is_destroyed) {
+        _results.push(e.destroy());
+      } else {
+        _results.push(void 0);
+      }
+    }
+    return _results;
+  };
+
+  Engine.prototype.destroy = function() {
+    var d, descdendants, i, kill, _base, _i, _len;
+    LOG(this.id, ".destroy()");
+    this.hoistedTrigger("beforeDestroy", this);
+    GSS._ids_killed([this.id]);
+    if (this.scope) {
+      descdendants = GSS.get.descdendantNodes(this.scope);
+      for (_i = 0, _len = descdendants.length; _i < _len; _i++) {
+        d = descdendants[_i];
+        kill = d._gss_id;
+        if (kill) {
+          GSS._id_killed(kill);
+        }
+      }
+    }
+    i = engines.indexOf(this);
+    if (i > -1) {
+      engines.splice(i, 1);
+    }
+    delete engines.byId[this.id];
+    this.offAll();
+    this.setNeedsLayout(false);
+    this.setNeedsDisplay(false);
+    this.setNeedsLayout(false);
+    this.waitingToLayoutSubtree = false;
+    this.commander.destroy();
+    if (typeof (_base = this.getter).destroy === "function") {
+      _base.destroy();
+    }
+    this.vars = null;
+    this.ast = null;
+    this.getter = null;
+    this.scope = null;
+    this.commander = null;
+    this._Hierarchy_destroy();
+    this._CSSDumper_destroy();
+    this._Worker_destroy();
+    this._Queries_destroy();
+    this.is_running = null;
+    this.is_destroyed = true;
+    return this;
   };
 
   Engine.prototype.elVar = function(el, key, selector, tracker2) {
@@ -10723,7 +10832,7 @@ Commander = (function() {
 
   Commander.prototype.spawnForScope = function(prop) {
     var key, thisEngine;
-    key = "$" + GSS.getId(this.engine.scope) + ("[" + prop + "]");
+    key = "$" + this.engine.id + ("[" + prop + "]");
     thisEngine = this.engine;
     return GSS.on("engine:beforeDisplay", function(engine) {
       var val;
@@ -11046,7 +11155,7 @@ Commander = (function() {
 
   Commander.prototype._chainer = function(op, head, tail, s, w) {
     var engine, tracker, _e_for_chain;
-    tracker = "eq-chain-" + GSS._id_counter++;
+    tracker = "eq-chain-" + GSS.uid();
     engine = this.engine;
     _e_for_chain = this._e_for_chain;
     return function(query, e) {
@@ -11216,6 +11325,328 @@ Commander = (function() {
 })();
 
 module.exports = Commander;
+
+});
+require.register("the-gss-engine/lib/Thread.js", function(exports, require, module){
+var Thread,
+  __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; },
+  __slice = [].slice;
+
+Thread = (function() {
+  function Thread() {
+    this._remove = __bind(this._remove, this);
+    this['remove'] = __bind(this['remove'], this);
+    this.stay = __bind(this.stay, this);
+    this.suggest = __bind(this.suggest, this);
+    this._editvar = __bind(this._editvar, this);
+    this.gt = __bind(this.gt, this);
+    this.lt = __bind(this.lt, this);
+    this.gte = __bind(this.gte, this);
+    this.lte = __bind(this.lte, this);
+    this.eq = __bind(this.eq, this);
+    this._addConstraint = __bind(this._addConstraint, this);
+    this._execute = __bind(this._execute, this);
+    this.execute = __bind(this.execute, this);
+    this;
+  }
+
+  Thread.prototype.needsSetup = true;
+
+  Thread.prototype.setupIfNeeded = function() {
+    if (!this.needsSetup) {
+      return this;
+    }
+    this.needsSetup = false;
+    this.solver = new c.SimplexSolver();
+    this.solver.autoSolve = false;
+    this.cachedVars = {};
+    this.constraintsByTracker = {};
+    this.varIdsByTracker = {};
+    this.__editVarNames = [];
+    return this;
+  };
+
+  Thread.prototype.postMessage = function(message) {
+    this.execute(message);
+    return this;
+  };
+
+  Thread.prototype.terminate = function() {
+    this.needsSetup = true;
+    this.solver = null;
+    this.cachedVars = null;
+    this.constraintsByTracker = null;
+    this.varIdsByTracker = null;
+    this.__editVarNames = null;
+    return this;
+  };
+
+  Thread.prototype.execute = function(message) {
+    var command, _i, _len, _ref;
+    this.setupIfNeeded();
+    _ref = message.commands;
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      command = _ref[_i];
+      this._execute(command, command);
+    }
+    return this;
+  };
+
+  Thread.prototype._execute = function(command, root) {
+    var func, i, node, sub, _i, _len, _ref;
+    node = command;
+    func = this[node[0]];
+    if (func == null) {
+      throw new Error("Thread.execute broke, couldn't find method: " + node[0]);
+    }
+    _ref = node.slice(1, +node.length + 1 || 9e9);
+    for (i = _i = 0, _len = _ref.length; _i < _len; i = ++_i) {
+      sub = _ref[i];
+      if (sub instanceof Array) {
+        node.splice(i + 1, 1, this._execute(sub, root));
+      }
+    }
+    return func.call.apply(func, [this, root].concat(__slice.call(node.slice(1, node.length))));
+  };
+
+  Thread.prototype.getValues = function() {
+    var id, o;
+    this.solver.solve();
+    o = {};
+    for (id in this.cachedVars) {
+      o[id] = this.cachedVars[id].value;
+    }
+    return o;
+  };
+
+  Thread.prototype.number = function(root, num) {
+    return Number(num);
+  };
+
+  Thread.prototype._trackVarId = function(id, tracker) {
+    if (!this.varIdsByTracker[tracker]) {
+      this.varIdsByTracker[tracker] = [];
+    }
+    if (this.varIdsByTracker[tracker].indexOf(id) === -1) {
+      return this.varIdsByTracker[tracker].push(id);
+    }
+  };
+
+  Thread.prototype["var"] = function(self, id, tracker) {
+    var v;
+    if (this.cachedVars[id]) {
+      return this.cachedVars[id];
+    }
+    v = new c.Variable({
+      name: id
+    });
+    if (tracker) {
+      this._trackVarId(id, tracker);
+      v._tracker = tracker;
+      v._is_tracked = true;
+    }
+    this.cachedVars[id] = v;
+    return v;
+  };
+
+  Thread.prototype.varexp = function(self, id, expression, tracker) {
+    var cv;
+    cv = this.cachedVars;
+    if (cv[id]) {
+      return cv[id];
+    }
+    if (!(expression instanceof c.Expression)) {
+      throw new Error("Thread `varexp` requires an instance of c.Expression");
+    }
+    Object.defineProperty(cv, id, {
+      get: function() {
+        var clone;
+        clone = expression.clone();
+        if (tracker) {
+          this._trackVarId(id, tracker);
+          clone._tracker = tracker;
+          clone._is_tracked = true;
+        }
+        return clone;
+      }
+    });
+    return expression;
+  };
+
+  Thread.prototype._trackRootIfNeeded = function(root, tracker) {
+    if (tracker) {
+      root._is_tracked = true;
+      if (!root._trackers) {
+        root._trackers = [];
+      }
+      if (root._trackers.indexOf(tracker) === -1) {
+        return root._trackers.push(tracker);
+      }
+    }
+  };
+
+  Thread.prototype.get = function(root, id, tracker, tracker2) {
+    var v;
+    v = this.cachedVars[id];
+    if (v) {
+      this._trackRootIfNeeded(root, tracker);
+      this._trackRootIfNeeded(root, tracker2);
+      this._trackRootIfNeeded(root, v.tracker);
+      return v;
+    }
+    throw new Error("AST method 'get' couldn't find var with id: " + id);
+  };
+
+  Thread.prototype.plus = function(root, e1, e2) {
+    return c.plus(e1, e2);
+  };
+
+  Thread.prototype.minus = function(root, e1, e2) {
+    return c.minus(e1, e2);
+  };
+
+  Thread.prototype.multiply = function(root, e1, e2) {
+    return c.times(e1, e2);
+  };
+
+  Thread.prototype.divide = function(root, e1, e2, s, w) {
+    return c.divide(e1, e2);
+  };
+
+  Thread.prototype._strength = function(s) {
+    var strength;
+    if (s == null) {
+      s = 'required';
+    }
+    if (typeof s === 'string') {
+      if (s === 'require') {
+        s = 'required';
+      }
+      strength = c.Strength[s];
+      return strength;
+    }
+    return s;
+    /*   
+    if strength.symbolicWeight?
+      return strength
+    else
+      throw new Error("Unrecognized Strength: #{s}")
+    */
+
+  };
+
+  Thread.prototype._addConstraint = function(root, constraint) {
+    var tracker, _i, _len, _ref;
+    this.solver.addConstraint(constraint);
+    if (root._is_tracked) {
+      _ref = root._trackers;
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        tracker = _ref[_i];
+        if (!this.constraintsByTracker[tracker]) {
+          this.constraintsByTracker[tracker] = [];
+        }
+        this.constraintsByTracker[tracker].push(constraint);
+      }
+    }
+    return constraint;
+  };
+
+  Thread.prototype.eq = function(self, e1, e2, s, w) {
+    return this._addConstraint(self, new c.Equation(e1, e2, this._strength(s), w));
+  };
+
+  Thread.prototype.lte = function(self, e1, e2, s, w) {
+    return this._addConstraint(self, new c.Inequality(e1, c.LEQ, e2, this._strength(s), w));
+  };
+
+  Thread.prototype.gte = function(self, e1, e2, s, w) {
+    return this._addConstraint(self, new c.Inequality(e1, c.GEQ, e2, this._strength(s), w));
+  };
+
+  Thread.prototype.lt = function(self, e1, e2, s, w) {
+    return this._addConstraint(self, new c.Inequality(e1, c.LEQ, e2, this._strength(s), w));
+  };
+
+  Thread.prototype.gt = function(self, e1, e2, s, w) {
+    return this._addConstraint(self, new c.Inequality(e1, c.GEQ, e2, this._strength(s), w));
+  };
+
+  Thread.prototype._editvar = function(varr, s, w) {
+    if (this.__editVarNames.indexOf(varr.name) === -1) {
+      this.__editVarNames.push(varr.name);
+      this.solver.addEditVar(varr, this._strength(s), w);
+    }
+    return this;
+  };
+
+  Thread.prototype.suggest = function(self, varr, val, s, w) {
+    if (s == null) {
+      s = 'strong';
+    }
+    if (typeof varr === 'string') {
+      varr = this.get(self, varr);
+    }
+    this._editvar(varr, s, w);
+    this.solver.suggestValue(varr, val);
+    return this.solver.resolve();
+  };
+
+  Thread.prototype.stay = function(self) {
+    var args, v, _i, _len, _ref;
+    args = __slice.call(arguments);
+    _ref = args.slice(1, args.length);
+    for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+      v = _ref[_i];
+      this.solver.addStay(v);
+    }
+    return this.solver;
+  };
+
+  Thread.prototype['remove'] = function(self) {
+    var args, tracker, trackers, _i, _len, _results;
+    args = __slice.call(arguments);
+    trackers = __slice.call(args.slice(1, args.length));
+    _results = [];
+    for (_i = 0, _len = trackers.length; _i < _len; _i++) {
+      tracker = trackers[_i];
+      _results.push(this._remove(tracker));
+    }
+    return _results;
+  };
+
+  Thread.prototype._remove = function(tracker) {
+    var constraint, error, id, movealong, _i, _j, _len, _len1, _ref, _ref1;
+    delete this.__editVarNames[tracker];
+    if (this.constraintsByTracker[tracker]) {
+      _ref = this.constraintsByTracker[tracker];
+      for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+        constraint = _ref[_i];
+        try {
+          this.solver.removeConstraint(constraint);
+        } catch (_error) {
+          error = _error;
+          movealong = 'please';
+        }
+      }
+      delete this.constraintsByTracker[tracker];
+    }
+    if (this.varIdsByTracker[tracker]) {
+      _ref1 = this.varIdsByTracker[tracker];
+      for (_j = 0, _len1 = _ref1.length; _j < _len1; _j++) {
+        id = _ref1[_j];
+        delete this.cachedVars[id];
+      }
+      return delete this.varIdsByTracker[tracker];
+    }
+  };
+
+  return Thread;
+
+})();
+
+if (typeof module !== "undefined" && module !== null ? module.exports : void 0) {
+  module.exports = Thread;
+}
 
 });
 require.register("the-gss-engine/lib/dom/Getter.js", function(exports, require, module){
@@ -11440,208 +11871,13 @@ Getter.getRootScope = function() {
 module.exports = Getter;
 
 });
-require.register("the-gss-engine/lib/dom/Setter.js", function(exports, require, module){
-var Setter;
-
-Setter = (function() {
-  function Setter(scope) {
-    this.scope = scope;
-    if (!this.scope) {
-      this.scope = document;
-    }
-  }
-
-  Setter.prototype.clean = function() {};
-
-  Setter.prototype.destroy = function() {};
-
-  Setter.prototype.setOLD = function(vars) {
-    var dimension, element, gid, key, val, _results;
-    if (GSS.config.processBeforeSet) {
-      vars = GSS.config.processBeforeSet(vars);
-    }
-    vars = this.cleanVarsForDisplay(vars);
-    _results = [];
-    for (key in vars) {
-      val = vars[key];
-      if (key[0] === "$") {
-        gid = key.substring(1, key.indexOf("["));
-        dimension = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
-        element = GSS.getById(gid);
-        if (element) {
-          if (GSS.config.roundBeforeSet) {
-            val = Math.round(val);
-          }
-          _results.push(this.elementSet(element, dimension, val));
-        } else {
-          _results.push(console.log("Element wasn't found"));
-        }
-      } else {
-        _results.push(void 0);
-      }
-    }
-    return _results;
-  };
-
-  Setter.prototype.set = function(vars) {
-    var id, obj, varsById, _ref;
-    if (GSS.config.processBeforeSet) {
-      vars = GSS.config.processBeforeSet(vars);
-    }
-    varsById = this.varsByViewId(this.cleanVarsForDisplay(vars));
-    for (id in varsById) {
-      obj = varsById[id];
-      if ((_ref = GSS.View.byId[id]) != null) {
-        if (typeof _ref.updateValues === "function") {
-          _ref.updateValues(obj);
-        }
-      }
-    }
-    return GSS.get.view(this.scope).displayIfNeeded();
-  };
-
-  Setter.prototype.varsByViewId = function(vars) {
-    var gid, key, prop, val, varsById;
-    varsById = {};
-    for (key in vars) {
-      val = vars[key];
-      if (key[0] === "$") {
-        gid = key.substring(1, key.indexOf("["));
-        if (!varsById[gid]) {
-          varsById[gid] = {};
-        }
-        prop = key.substring(key.indexOf("[") + 1, key.indexOf("]"));
-        varsById[gid][prop] = val;
-      }
-    }
-    return varsById;
-  };
-
-  Setter.prototype.cleanVarsForDisplay = function(vars) {
-    var idx, k, key, keysToKill, obj, val, _i, _len;
-    obj = {};
-    keysToKill = [];
-    for (key in vars) {
-      val = vars[key];
-      idx = key.indexOf("intrinsic-");
-      if (idx !== -1) {
-        keysToKill.push(key.replace("intrinsic-", ""));
-      } else {
-        obj[key] = val;
-      }
-    }
-    for (_i = 0, _len = keysToKill.length; _i < _len; _i++) {
-      k = keysToKill[_i];
-      delete obj[k];
-    }
-    return obj;
-  };
-
-  Setter.prototype.elementSet = function(element, dimension, value) {
-    var offsets;
-    offsets = null;
-    switch (dimension) {
-      case 'width':
-      case 'w':
-        return this.setWidth(element, value);
-      case 'height':
-      case 'h':
-        return this.setHeight(element, value);
-      case 'left':
-      case 'x':
-        return this.setLeft(element, value);
-      case 'top':
-      case 'y':
-        return this.setTop(element, value);
-    }
-  };
-
-  Setter.prototype.makePositioned = function(element) {
-    if (element._gss_posititioned) {
-      return;
-    }
-    element._gss_posititioned = true;
-    element.style.position = 'absolute';
-    return element.style.margin = '0px';
-  };
-
-  Setter.prototype.getOffsets = function(element) {
-    var offsets;
-    if (!GSS.config.useOffsetParent) {
-      return {
-        x: 0,
-        y: 0
-      };
-    }
-    offsets = {
-      x: 0,
-      y: 0
-    };
-    if (!element.offsetParent) {
-      return offsets;
-    }
-    element = element.offsetParent;
-    while (true) {
-      offsets.x += element.offsetLeft;
-      offsets.y += element.offsetTop;
-      if (!element.offsetParent) {
-        break;
-      }
-      element = element.offsetParent;
-    }
-    return offsets;
-  };
-
-  Setter.prototype.setWidth = function(element, value) {
-    return element.style.width = "" + value + "px";
-  };
-
-  Setter.prototype.setHeight = function(element, value) {
-    return element.style.height = "" + value + "px";
-  };
-
-  Setter.prototype.setLeft = function(element, value, offsets) {
-    this.makePositioned(element);
-    offsets = this.getOffsets(element);
-    return element.style.left = "" + (value - offsets.x) + "px";
-  };
-
-  Setter.prototype.setTop = function(element, value, offsets) {
-    this.makePositioned(element);
-    offsets = this.getOffsets(element);
-    return element.style.top = "" + (value - offsets.y) + "px";
-  };
-
-  /*
-  setwithStyleTag: (vars) =>
-    if !@_has_setVars_styleTag
-      @_has_setVars_styleTag = true
-      @scope.insertAdjacentHTML('afterbegin','<style data-gss-generated></style>')
-      @generatedStyle = @scope.childNodes[0]
-    html = ""
-    for key of vars
-      if key[0] is "$"
-        gid = key.substring(1, key.indexOf("["))
-        dimension = key.substring(key.indexOf("[")+1, key.indexOf("]"))
-        html += "[data-gss-id=\"#{gid}\"]{#{dimension}:#{vars[key]}px !important;}"
-    #@generatedStyle.textContent = html
-    @generatedStyle.innerHTML = html
-    #console.log @scope.childNodes
-    #@scope.insertAdjacentHTML 'afterbegin', html
-  */
-
-
-  return Setter;
-
-})();
-
-module.exports = Setter;
-
-});
 require.register("the-gss-engine/lib/dom/IdMixin.js", function(exports, require, module){
 var IdMixin;
 
 IdMixin = {
+  uid: function() {
+    return this._id_counter++;
+  },
   _id_counter: 1,
   _byIdCache: {},
   _ids_killed: function(ids) {
@@ -11681,7 +11917,7 @@ IdMixin = {
     }
     gid = this.getId(el);
     if (gid == null) {
-      _id = this._id_counter++;
+      _id = this.uid();
       gid = String(el.id || _id);
       el.setAttribute('data-gss-id', gid);
       el.style['box-sizing'] = 'border-box';
@@ -11813,8 +12049,8 @@ require.alias("the-gss-engine/lib/dom/View.js", "gss/deps/gss-engine/lib/dom/Vie
 require.alias("the-gss-engine/lib/dom/Observer.js", "gss/deps/gss-engine/lib/dom/Observer.js");
 require.alias("the-gss-engine/lib/Engine.js", "gss/deps/gss-engine/lib/Engine.js");
 require.alias("the-gss-engine/lib/Commander.js", "gss/deps/gss-engine/lib/Commander.js");
+require.alias("the-gss-engine/lib/Thread.js", "gss/deps/gss-engine/lib/Thread.js");
 require.alias("the-gss-engine/lib/dom/Getter.js", "gss/deps/gss-engine/lib/dom/Getter.js");
-require.alias("the-gss-engine/lib/dom/Setter.js", "gss/deps/gss-engine/lib/dom/Setter.js");
 require.alias("the-gss-engine/lib/dom/IdMixin.js", "gss/deps/gss-engine/lib/dom/IdMixin.js");
 require.alias("the-gss-engine/lib/GSS.js", "gss/deps/gss-engine/index.js");
 require.alias("the-gss-engine/lib/GSS.js", "gss-engine/index.js");
