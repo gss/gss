@@ -14772,6 +14772,7 @@ Engine = (function(_super) {
     LOG(this.id, ".layout()");
     this.hoistedTrigger("beforeLayout", this);
     this.is_running = true;
+    TIME("" + this.id + " LAYOUT & DISPLAY");
     this.solve();
     return this.setNeedsLayout(false);
   };
@@ -14853,7 +14854,7 @@ Engine = (function(_super) {
     this.dispatchedTrigger("solved", {
       values: this.vars
     });
-    TIME_END("" + this.id + " DISPLAY PASS");
+    TIME_END("" + this.id + " LAYOUT & DISPLAY");
     return this;
   };
 
@@ -14880,7 +14881,6 @@ Engine = (function(_super) {
   Engine.prototype.solveWithWorker = function() {
     var workerMessage;
     LOG(this.id, ".solveWithWorker()", this.workerCommands);
-    TIME("" + this.id + " DISPLAY PASS");
     workerMessage = {
       commands: this.workerCommands
     };
