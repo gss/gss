@@ -13701,10 +13701,10 @@ _scopesToLoad = null;
 
 styleQuery = GSS.styleQuery = new GSS.Query({
   selector: "style",
-  isLive: true,
+  isLive: false,
   isMulti: true,
   createNodeList: function() {
-    return document.getElementsByTagName("style");
+    return document.querySelectorAll("style");
   }
 });
 
@@ -14228,10 +14228,10 @@ View = (function() {
     o = this.values;
     if ((o.x != null) || (o.y != null)) {
       this.style[transformPrefix] = "";
-      if (o.x) {
+      if (o.x != null) {
         this.style[transformPrefix] += " translateX(" + (o.x - offsets.x) + "px)";
       }
-      if (o.y) {
+      if (o.y != null) {
         this.style[transformPrefix] += " translateY(" + (o.y - offsets.y) + "px)";
       }
     }
@@ -15515,7 +15515,7 @@ Commander = (function() {
     return GSS.on("engine:beforeDisplay", function(engine) {
       var val;
       val = engine.vars[key];
-      if (val) {
+      if (val != null) {
         if (thisEngine.isDescendantOf(engine)) {
           return thisEngine.registerCommand(['suggest', ['get', key], ['number', val], 'required']);
         }
@@ -15933,7 +15933,7 @@ Commander = (function() {
     query = this.engine.registerDomQuery({
       selector: "." + sel,
       isMulti: true,
-      isLive: true,
+      isLive: false,
       createNodeList: function() {
         return _this.engine.queryScope.getElementsByClassName(sel);
       }
@@ -15948,7 +15948,7 @@ Commander = (function() {
     query = this.engine.registerDomQuery({
       selector: sel,
       isMulti: true,
-      isLive: true,
+      isLive: false,
       createNodeList: function() {
         return _this.engine.queryScope.getElementsByTagName(sel);
       }
@@ -16426,10 +16426,7 @@ Getter = (function() {
   };
 
   Getter.prototype.getAllStyleNodes = function() {
-    if (!this.styleNodes) {
-      this.styleNodes = this.scope.getElementsByTagName("style");
-    }
-    return this.styleNodes;
+    return this.scope.getElementsByTagName("style");
   };
 
   Getter.prototype.readAllASTs = function() {
@@ -16543,7 +16540,11 @@ Getter = (function() {
 })();
 
 Getter.getRootScope = function() {
-  return document.body;
+  if (typeof ShadowDOMPolyfill === "undefined" || ShadowDOMPolyfill === null) {
+    return document.body;
+  } else {
+    return ShadowDOMPolyfill.wrap(document.body);
+  }
 };
 
 module.exports = Getter;
