@@ -15055,13 +15055,13 @@ Engine = (function(_super) {
           }
         }
       }
-      GSS._ids_killed(globalRemoves);
-      if (trigger) {
-        this.commander.handleRemoves(removes);
-        this.commander.handleSelectorsWithAdds(selectorsWithAdds);
-      }
-      return trigger;
     }
+    GSS._ids_killed(globalRemoves);
+    if (trigger) {
+      this.commander.handleRemoves(removes);
+      this.commander.handleSelectorsWithAdds(selectorsWithAdds);
+    }
+    return trigger;
   };
 
   Engine.prototype._Queries_destroy = function() {
@@ -15717,7 +15717,7 @@ Commander = (function() {
     ready = true;
     for (_i = 0, _len = queries.length; _i < _len; _i++) {
       q = queries[_i];
-      if (q.lastAddedIds.length < 0) {
+      if (q.lastAddedIds.length <= 0) {
         ready = false;
         break;
       }
@@ -16049,7 +16049,11 @@ Commander = (function() {
       createNodeList: function() {
         var el;
         el = document.getElementById(sel);
-        return [el];
+        if (el) {
+          return [el];
+        } else {
+          return [];
+        }
       }
     });
     bindRoot(root, query);
