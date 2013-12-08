@@ -85,3 +85,5 @@ engine.run('@horizontal [#box1]-[#box2]-[#box3]-[#box4]-[#box5]-[#box6];');
 You can provide as many GSS rules as you need in the string. You can also call the `run` method multiple times to register new rules.
 
 The GSS runtime will invoke the [GSS engine](https://github.com/the-gss/engine), which measures the DOM elements specified in the rules, and solves their optimal sizes and places using the Cassowary constraint solver. The GSS engine will then update the CSS rules on the page accordingly.
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/the-gss/gss/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
