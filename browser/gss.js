@@ -14651,6 +14651,11 @@ GSS.unobserve = function() {
 };
 
 document.addEventListener("DOMContentLoaded", function(e) {
+  document.dispatchEvent(new CustomEvent('GSS', {
+    detail: GSS,
+    bubbles: false,
+    cancelable: false
+  }));
   setupObserver();
   GSS.boot();
   LOG("DOMContentLoaded");
