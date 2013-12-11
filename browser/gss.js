@@ -13958,6 +13958,17 @@ _ = {
   },
   mat2dToCSS: function(a) {
     return 'matrix(' + a[0] + ', ' + a[1] + ', ' + a[2] + ', ' + a[3] + ', ' + a[4] + ', ' + a[5] + ')';
+  },
+  camelize: function(s) {
+    var result;
+    result = s.replace(/[-_\s]+(.)?/g, function(match, c) {
+      if (c) {
+        return c.toUpperCase();
+      } else {
+        return "";
+      }
+    });
+    return result;
   }
 };
 
@@ -14364,7 +14375,7 @@ View = (function() {
       this._positionMatrix(xLocal, yLocal);
     }
     if (o['z-index'] != null) {
-      this.style['z-index'] = o['z-index'];
+      this.style['zIndex'] = o['z-index'];
       delete o['z-index'];
     }
     /*   
@@ -14384,6 +14395,7 @@ View = (function() {
 
     for (key in o) {
       val = o[key];
+      key = GSS._.camelize(key);
       this.style[key] = val + "px";
     }
     _ref1 = this.style;
