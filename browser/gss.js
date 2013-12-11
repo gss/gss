@@ -13847,16 +13847,17 @@ GSS.dirtyLoadEngines = function() {
 
 });
 require.register("the-gss-engine/lib/_.js", function(exports, require, module){
-var firstSupportedStylePrefix, getTime, _,
+var firstSupportedStylePrefix, getTime, tempDiv, _,
   __slice = [].slice;
 
 getTime = Date.now || function() {
   return new Date().getTime();
 };
 
+tempDiv = document.createElement("div");
+
 firstSupportedStylePrefix = function(prefixedPropertyNames) {
-  var name, tempDiv, _i, _len;
-  tempDiv = document.createElement("div");
+  var name, _i, _len;
   for (_i = 0, _len = prefixedPropertyNames.length; _i < _len; _i++) {
     name = prefixedPropertyNames[_i];
     if (typeof tempDiv.style[name] !== 'undefined') {
@@ -13867,7 +13868,8 @@ firstSupportedStylePrefix = function(prefixedPropertyNames) {
 };
 
 _ = {
-  transformPrefix: firstSupportedStylePrefix(["transform", "msTransform", "MozTransform", "WebkitTransform", "OTransform"]),
+  transformPrefix: firstSupportedStylePrefix(["transform", "WebkitTransform", "MozTransform", "OTransform", "msTransform"]),
+  boxSizingPrefix: firstSupportedStylePrefix(["boxSizing", "WebkitBoxSizing", "MozBoxSizing", "OBoxSizing", "msBoxSizing"]),
   defer: function(func) {
     return setTimeout(func, 1);
   },
@@ -16743,7 +16745,9 @@ module.exports = Getter;
 
 });
 require.register("the-gss-engine/lib/dom/IdMixin.js", function(exports, require, module){
-var IdMixin;
+var IdMixin, boxSizingPrefix;
+
+boxSizingPrefix = GSS._.boxSizingPrefix;
 
 IdMixin = {
   uid: function() {
@@ -16791,7 +16795,7 @@ IdMixin = {
       _id = this.uid();
       gid = String(el.id || _id);
       el.setAttribute('data-gss-id', gid);
-      el.style['box-sizing'] = 'border-box';
+      el.style[boxSizingPrefix] = 'border-box';
       el._gss_id = gid;
       GSS.View["new"]({
         el: el,
